@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-[#0b1220]">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bote Inteligente - Panel de Monitoreo Pro</title>
+  
+  <!-- Fonts & Tailwind CSS -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0b1220',
+            cardDark: '#121b2e',
+            borderDark: '#24314d',
+            boxDark: '#18233a',
+            organico: '#4ade80',
+            reciclable: '#38bdf8',
+            inorganico: '#f59e0b',
+            casiLleno: '#f97316',
+            lleno: '#ef4444',
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b1220; }
+    ::-webkit-scrollbar-thumb { background: #24314d; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+
+    :root {
+      --bg: #0b1220; --card: #121b2e; --borde: #24314d; --caja: #18233a;
+      --texto: #e6edf7; --suave: #8a9bb8; --pista: #1f2a44;
+      --organico: #4ade80; --reciclable: #38bdf8; --inorganico: #f59e0b;
+    }
+
+    body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--texto); }
+
+    .ring-circle {
+      transition: stroke-dasharray 0.7s ease, stroke 0.3s ease;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
+
+    .badge-normal { background: rgba(74, 222, 128, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); }
+    .badge-medio { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-casi-lleno { background: rgba(249, 115, 22, 0.15); color: #f97316; border: 1px solid rgba(249, 115, 22, 0.3); }
+    .badge-lleno { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-off { background: rgba(138, 155, 184, 0.15); color: #8a9bb8; border: 1px solid rgba(138, 155, 184, 0.3); }
+
+    .chart-hover-line { stroke: #3b82f6; stroke-width: 1.5; stroke-dasharray: 4 4; pointer-events: none; }
+  </style>
+</head>
+<body class="h-full overflow-hidden text-slate-100 flex flex-col md:flex-row">
+
+  <!-- BARRA LATERAL -->
+  <aside id="sidebar" class="w-full md:w-64 bg-cardDark border-r border-borderDark flex flex-col justify-between shrink-0 z-30 transition-all duration-300">
+    <div>
+      <div class="p-5 border-b border-borderDark flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+          </div>
+          <div>
+            <h1 class="font-bold text-base leading-tight text-white tracking-tight" id="lblTituloMain">Bote Inteligente</h1>
+            <p class="text-xs text-slate-400 font-medium">Panel V2.5 Pro</p>
+          </div>
+        </div>
+      </div>
+
+      <nav class="p-3 space-y-1" id="navContainer">
+        <button data-tab="dashboard" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all bg-blue-600/15 text-blue-400 border border-blue-500/30">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+          <span>Dashboard General</span>
+        </button>
+        <button data-tab="history" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>Historial y Eventos</span>
+        </button>
+        <button data-tab="alerts" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          <span>Alertas y Reglas</span>
+        </button>
+        <button data-tab="device" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.85a10 10 0 0 1 14 0"/><path d="M8.5 16.88a5 5 0 0 1 7 0"/></svg>
+          <span>Salud del Dispositivo</span>
+        </button>
+        <button data-tab="calibration" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/></svg>
+          <span>Calibración</span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="p-4 border-t border-borderDark space-y-3">
+      <div class="bg-boxDark p-3 rounded-xl flex items-center justify-between border border-borderDark/60">
+        <div class="flex items-center gap-2">
+          <span id="modeDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="modeTxt" class="text-xs font-semibold text-slate-300">Modo Demo</span>
+        </div>
+        <button id="btnToggleDemo" class="text-[11px] font-bold px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition">
+          Cambiar
+        </button>
+      </div>
+
+      <button id="btnLoginModal" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-borderDark rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <span id="lblLoginBtnText">Conectar Particle API</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="flex-1 flex flex-col h-full overflow-hidden">
+    <header class="h-16 border-b border-borderDark bg-cardDark/50 px-6 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-3">
+        <h2 id="viewTitle" class="text-lg font-bold text-white tracking-tight">Dashboard General</h2>
+        <span id="statusBadge" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          En línea · Actualizado
+        </span>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div class="hidden sm:flex items-center gap-2 bg-boxDark px-3 py-1.5 rounded-xl border border-borderDark">
+          <span class="text-xs text-slate-400 font-medium">Intervalo Photon:</span>
+          <select id="selMin" class="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer">
+            <option value="1">Cada 1 min</option>
+            <option value="5" selected>Cada 5 min</option>
+            <option value="10">Cada 10 min</option>
+            <option value="15">Cada 15 min</option>
+            <option value="30">Cada 30 min</option>
+            <option value="60">Cada 60 min</option>
+          </select>
+        </div>
+
+        <button id="btnAct" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-md shadow-blue-600/20">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+          <span>Medir Ahora</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="aviso" class="bg-red-500/10 border-b border-red-500/30 px-6 py-2.5 text-xs text-red-300 flex items-center gap-2" hidden>
+      <svg class="w-4 h-4 text-red-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span id="avisoTxt">Sin comunicación con la placa Particle. Mostrando última lectura conocida.</span>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6" id="tabContentArea">
+      <!-- TAB 1: DASHBOARD -->
+      <section id="tab-dashboard" class="tab-pane space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="gridCards"></div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 bg-cardDark border border-borderDark rounded-2xl p-5 flex flex-col justify-between shadow-sm relative">
+            <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div>
+                <h3 class="font-bold text-white text-base flex items-center gap-2">
+                  <svg class="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                  Historial de Llenado Interactivo
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">Pasa el cursor sobre la gráfica para ver valores exactos</p>
+              </div>
+
+              <div class="flex items-center gap-1 bg-boxDark p-1 rounded-xl border border-borderDark" id="rangeSelector">
+                <button data-range="6" class="px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">6h</button>
+                <button data-range="12" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white shadow-sm transition">12h</button>
+                <button data-range="24" class="px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">24h</button>
+                <button data-range="168" class="px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">7d</button>
+              </div>
+            </div>
+
+            <div class="relative w-full h-64" id="graficaWrapper">
+              <svg id="chartSvg" class="w-full h-full overflow-visible"></svg>
+              <div id="chartTooltip" class="absolute hidden pointer-events-none bg-slate-900/95 border border-slate-700 p-3 rounded-xl shadow-xl text-xs backdrop-blur-md z-20 space-y-1 transform -translate-x-1/2 -translate-y-full"></div>
+            </div>
+
+            <div class="flex items-center justify-center gap-6 mt-4 pt-3 border-t border-borderDark/60 text-xs text-slate-400">
+              <span class="flex items-center gap-2"><i class="w-2.5 h-2.5 rounded-sm bg-emerald-400"></i> Orgánico</span>
+              <span class="flex items-center gap-2"><i class="w-2.5 h-2.5 rounded-sm bg-sky-400"></i> Reciclable</span>
+              <span class="flex items-center gap-2"><i class="w-2.5 h-2.5 rounded-sm bg-amber-400"></i> Inorgánico</span>
+            </div>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 flex flex-col justify-between shadow-sm">
+            <div>
+              <h3 class="font-bold text-white text-base flex items-center gap-2 mb-1">
+                <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                Proporción de Residuos
+              </h3>
+              <p class="text-xs text-slate-400">Distribución porcentual del uso actual del bote inteligente.</p>
+            </div>
+
+            <div class="relative w-48 h-48 mx-auto my-4 flex items-center justify-center">
+              <svg id="donutSvg" class="w-full h-full" viewBox="0 0 100 100"></svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span id="donutTotalVol" class="text-xl font-extrabold text-white">0%</span>
+                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Llenado Total</span>
+              </div>
+            </div>
+
+            <div class="space-y-2 pt-2 border-t border-borderDark/60 text-xs">
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-emerald-400"></i> Orgánico:</span>
+                <span id="pctDonutOrg" class="font-bold text-white">0%</span>
+              </div>
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-sky-400"></i> Reciclable:</span>
+                <span id="pctDonutRec" class="font-bold text-white">0%</span>
+              </div>
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-amber-400"></i> Inorgánico:</span>
+                <span id="pctDonutInorg" class="font-bold text-white">0%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+              Últimos Eventos de Vaciado Detectados
+            </h3>
+            <span class="text-xs text-slate-400">Detección automática por caída &ge; 25%</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-boxDark text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-borderDark">
+                <tr>
+                  <th class="p-3">Hora del Vaciado</th>
+                  <th class="p-3">Compartimento</th>
+                  <th class="p-3">Nivel Prev.</th>
+                  <th class="p-3">Nivel Post.</th>
+                  <th class="p-3">Estado</th>
+                </tr>
+              </thead>
+              <tbody id="tbVaciadosDash" class="divide-y divide-borderDark/60"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: HISTORIAL -->
+      <section id="tab-history" class="tab-pane hidden space-y-6">
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-6">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 class="font-bold text-white text-lg">Registro Completo de Mediciones</h3>
+              <p class="text-xs text-slate-400">Historial de telemetría capturado localmente y por la Particle Photon</p>
+            </div>
+
+            <button id="btnExportCsv" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-md shadow-emerald-600/20">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Exportar a CSV</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <input id="searchHistory" type="text" placeholder="Buscar por fecha u hora..." class="bg-boxDark border border-borderDark rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+            <select id="filterComp" class="bg-boxDark border border-borderDark rounded-xl px-4 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="all">Todos los compartimentos</option>
+              <option value="1">Orgánico</option>
+              <option value="2">Reciclable</option>
+              <option value="3">Inorgánico</option>
+            </select>
+            <div class="text-xs text-slate-400 flex items-center justify-end font-semibold">
+              Total registros: <span id="lblTotalRegs" class="ml-1 text-white">0</span>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto rounded-xl border border-borderDark">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-boxDark text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-borderDark">
+                <tr>
+                  <th class="p-3">Timestamp</th>
+                  <th class="p-3">Orgánico (%)</th>
+                  <th class="p-3">Reciclable (%)</th>
+                  <th class="p-3">Inorgánico (%)</th>
+                  <th class="p-3">Distancia Org (cm)</th>
+                  <th class="p-3">Distancia Rec (cm)</th>
+                  <th class="p-3">Distancia Inorg (cm)</th>
+                </tr>
+              </thead>
+              <tbody id="tbHistorialFull" class="divide-y divide-borderDark/60"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: ALERTAS -->
+      <section id="tab-alerts" class="tab-pane hidden space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-5">
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><polyline points="10 11 10 17"/><polyline points="14 11 14 17"/></svg>
+              Reglas de Notificación de Vaciado (Telegram)
+            </h3>
+            <p class="text-xs text-slate-400">Define las condiciones de cambio de nivel para enviar el mensaje automático de vaciado a Telegram.</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-300 mb-1">Nivel Previo Mínimo (%)</label>
+                <input type="number" id="inputPreVac" value="60" min="10" max="100" class="w-full bg-boxDark border border-borderDark rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                <span class="text-[10px] text-slate-500">Estar al menos a este % antes de vaciar</span>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-300 mb-1">Nivel Posterior Máximo (%)</label>
+                <input type="number" id="inputPostVac" value="10" min="0" max="50" class="w-full bg-boxDark border border-borderDark rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                <span class="text-[10px] text-slate-500">Caer por debajo de este % para confirmar</span>
+              </div>
+            </div>
+
+            <button id="btnGuardarUmbralesVac" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-md shadow-emerald-600/20">
+              Guardar Regla de Vaciado en Photon
+            </button>
+            <div id="msgUmbralesVac" class="text-[11px] text-slate-400 text-center min-h-[1.2em]"></div>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-5">
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/></svg>
+              Umbrales de Alerta de Llenado
+            </h3>
+            <p class="text-xs text-slate-400">Define los niveles en los que el sistema cambia el estado de las tarjetas y activa notificaciones.</p>
+
+            <div class="space-y-4">
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-emerald-400">Normal / Bajo</span>
+                  <span>0% a &lt; 50%</span>
+                </div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-emerald-400 h-full w-[50%]"></div></div>
+              </div>
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-amber-400">Nivel Medio</span>
+                  <span>50% a 79%</span>
+                </div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-amber-400 h-full w-[79%]"></div></div>
+              </div>
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-red-400">Completamente Lleno (Crítico)</span>
+                  <span>&ge; 80%</span>
+                </div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-red-400 h-full w-full"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-5">
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              Canales & Notificaciones Push
+            </h3>
+            <p class="text-xs text-slate-400">Activa notificaciones de escritorio y alertas sonoras sintetizadas por audio.</p>
+
+            <div class="space-y-4 pt-2">
+              <div class="flex items-center justify-between p-3 bg-boxDark rounded-xl border border-borderDark">
+                <div>
+                  <h4 class="text-xs font-bold text-white">Notificaciones del Navegador</h4>
+                  <p class="text-[11px] text-slate-400">Alertas flotantes cuando un bote llega al umbral crítico</p>
+                </div>
+                <button id="btnTogglePush" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 transition">Desactivado</button>
+              </div>
+
+              <div class="flex items-center justify-between p-3 bg-boxDark rounded-xl border border-borderDark">
+                <div>
+                  <h4 class="text-xs font-bold text-white">Alerta Sonora (Beep)</h4>
+                  <p class="text-[11px] text-slate-400">Tono de audio al detectar contenedor lleno</p>
+                </div>
+                <button id="btnToggleAudio" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 transition">Desactivado</button>
+              </div>
+
+              <button id="btnTestSound" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-borderDark rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+                <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                <span>Probar Tono de Alerta</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: SALUD -->
+      <section id="tab-device" class="tab-pane hidden space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-400">Señal WiFi (Particle Photon)</span>
+              <svg class="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.85a10 10 0 0 1 14 0"/><path d="M8.5 16.88a5 5 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            </div>
+            <div class="text-2xl font-extrabold text-white" id="devRssiVal">-64 dBm</div>
+            <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden">
+              <div id="devRssiBar" class="bg-emerald-400 h-full w-[75%]"></div>
+            </div>
+            <p class="text-[11px] text-slate-400">Calidad de señal: <span class="text-emerald-400 font-bold">Excelente</span></p>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-400">Alimentación</span>
+              <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="16" height="10" x="2" y="7" rx="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/><line x1="10" x2="14" y1="12" y2="12"/></svg>
+            </div>
+            <div class="text-2xl font-extrabold text-white">5.1 V (Micro-USB)</div>
+            <p class="text-[11px] text-slate-400">Estado: <span class="text-emerald-400 font-bold">Alimentación continua activa</span></p>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-400">Tiempo de Operación</span>
+              <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="text-2xl font-extrabold text-white" id="devUptime">Operativo</div>
+            <p class="text-[11px] text-slate-400">Firmware: <span class="text-indigo-400 font-bold">v3.1.0 Particle OS</span></p>
+          </div>
+        </div>
+
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-4">
+          <h3 class="font-bold text-white text-base">Estado Físico de Sensores Ultrasónicos (HC-SR04)</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4" id="devSensorCards"></div>
+        </div>
+      </section>
+
+      <!-- TAB 5: CALIBRACIÓN -->
+      <section id="tab-calibration" class="tab-pane hidden space-y-6">
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-6 max-w-2xl space-y-6">
+          <div>
+            <h3 class="font-bold text-white text-lg">Calibración de Altura de Contenedores</h3>
+            <p class="text-xs text-slate-400">Ajusta la profundidad total (en cm) desde el sensor al fondo de cada bote vacío para garantizar el cálculo exacto del porcentaje de llenado.</p>
+          </div>
+
+          <form id="frmCalib" class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-emerald-400 mb-1">Altura Contenedor Orgánico (cm)</label>
+              <input type="number" id="depth1" step="0.5" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-sky-400 mb-1">Altura Contenedor Reciclable (cm)</label>
+              <input type="number" id="depth2" step="0.5" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-sky-500">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-amber-400 mb-1">Altura Contenedor Inorgánico (cm)</label>
+              <input type="number" id="depth3" step="0.5" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500">
+            </div>
+
+            <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-blue-600/20">
+              Guardar Calibración
+            </button>
+          </form>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- MODAL LOGIN PARTICLE API (CON SOPORTE MFA/OTP) -->
+  <div id="loginModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-cardDark border border-borderDark rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">
+      <button id="btnCloseLogin" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        </div>
+        <div>
+          <h3 class="font-bold text-white text-base">Iniciar Sesión Particle</h3>
+          <p class="text-xs text-slate-400">Monitoreo directo en la nube</p>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <input id="email" type="email" placeholder="Correo de Particle" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" autocomplete="username">
+        <input id="pass" type="password" placeholder="Contraseña" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" autocomplete="current-password">
+        <input id="devId" type="text" placeholder="Device ID de Particle Photon" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500">
+        
+        <div id="otpBox" class="hidden">
+          <input id="otp" type="text" inputmode="numeric" placeholder="Código de verificación MFA / OTP" class="w-full bg-boxDark border border-amber-500/50 rounded-xl px-4 py-2.5 text-xs text-amber-200 focus:outline-none">
+        </div>
+
+        <button id="btnEntrar" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition">
+          Entrar a Particle
+        </button>
+        <button id="btnCerrarSesionModal" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-red-400 rounded-xl text-xs font-semibold hidden transition">
+          Cerrar Sesión Actual
+        </button>
+        <div id="msg" class="text-xs text-slate-400 text-center min-h-[1.5em]"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CONFIG = {
+      titulo: "Bote Inteligente",
+      deviceIdDefault: "3f0036000947313037363132",
+      caidaVaciado: 25,
+      puntosRitmo: 8,
+      umbrales: { medio: 50, casiLleno: 70, lleno: 80 },
+      compartimentos: [
+        { id: 1, nombre: "Orgánico", icono: "leaf", colorHex: "#4ade80", colorVar: "--organico", depth: 27 },
+        { id: 2, nombre: "Reciclable", icono: "recycle", colorHex: "#38bdf8", colorVar: "--reciclable", depth: 27 },
+        { id: 3, nombre: "Inorgánico", icono: "trash", colorHex: "#f59e0b", colorVar: "--inorganico", depth: 27 }
+      ]
+    };
+
+    let state = {
+      demoMode: !sessionStorage.getItem("pt"),
+      token: sessionStorage.getItem("pt") || "",
+      deviceId: sessionStorage.getItem("pd") || CONFIG.deviceIdDefault,
+      baseApi: `https://api.particle.io/v1/devices/${sessionStorage.getItem("pd") || CONFIG.deviceIdDefault}`,
+      mfaToken: null,
+      timer: null,
+      selectedRangeHours: 12,
+      pushEnabled: false,
+      audioEnabled: false,
+      historial: [],
+      vaciados: [],
+      maxHoy: [0, 0, 0],
+      depths: JSON.parse(localStorage.getItem("bote_depths")) || [27, 27, 27]
+    };
+
+    const SVG_ICONS = {
+      leaf: '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>',
+      recycle: '<path d="M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5"/><path d="M11 19h8.203a1.83 1.83 0 0 1 1.556-.89 1.784 1.784 0 0 0 0-1.775l-1.226-2.12"/><path d="m14 16-3 3 3 3"/><path d="M8.293 13.596 7.196 9.5 3.1 10.598"/><path d="m9.344 5.811 1.093-1.892A1.83 1.83 0 0 1 11.985 3a1.784 1.784 0 0 1 1.546.888l3.943 6.843"/><path d="m13.378 9.633 4.096 1.098 1.097-4.096"/>',
+      trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>'
+    };
+
+    function getIco(key) {
+      return `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SVG_ICONS[key] || ''}</svg>`;
+    }
+
+    // Persistencia LocalStorage por dispositivo
+    function getLSKey(k) { return `bote:${state.deviceId}:${k}`; }
+    function loadLocalStorage() {
+      try {
+        state.historial = JSON.parse(localStorage.getItem(getLSKey("hist"))) || [];
+        state.vaciados = JSON.parse(localStorage.getItem(getLSKey("vac"))) || [];
+      } catch (_) { state.historial = []; state.vaciados = []; }
+    }
+    function saveLocalStorage() {
+      try {
+        localStorage.setItem(getLSKey("hist"), JSON.stringify(state.historial.slice(-500)));
+        localStorage.setItem(getLSKey("vac"), JSON.stringify(state.vaciados.slice(-50)));
+      } catch (_) {}
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      initUi();
+      loadLocalStorage();
+
+      if (state.historial.length === 0) {
+        initDemoData();
+      }
+
+      updateModeStatus();
+      renderAll();
+      setupEventListeners();
+
+      if (!state.demoMode) {
+        fetchHardwareInterval();
+      }
+
+      state.timer = setInterval(fetchTelemetry, 15000);
+    });
+
+    function initUi() {
+      document.getElementById("depth1").value = state.depths[0];
+      document.getElementById("depth2").value = state.depths[1];
+      document.getElementById("depth3").value = state.depths[2];
+
+      const gridCards = document.getElementById("gridCards");
+      gridCards.innerHTML = "";
+
+      CONFIG.compartimentos.forEach((c) => {
+        gridCards.insertAdjacentHTML("beforeend", `
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 flex flex-col justify-between shadow-sm relative overflow-hidden">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2 font-bold text-white">
+                <span class="p-2 rounded-xl bg-slate-800 text-slate-200 border border-borderDark" style="color:${c.colorHex}">
+                  ${getIco(c.icono)}
+                </span>
+                <span>${c.nombre}</span>
+              </div>
+              <span id="badge-${c.id}" class="px-2.5 py-1 rounded-full text-[11px] font-bold badge-normal">Normal</span>
+            </div>
+
+            <div class="relative w-44 h-44 mx-auto my-3 flex items-center justify-center">
+              <svg class="w-full h-full" viewBox="0 0 190 190">
+                <circle class="text-slate-800" stroke-width="14" stroke="currentColor" fill="none" cx="95" cy="95" r="78"/>
+                <circle id="ring-${c.id}" class="ring-circle" stroke-width="14" stroke="${c.colorHex}" stroke-dasharray="0 490" stroke-linecap="round" fill="none" cx="95" cy="95" r="78"/>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span id="pct-${c.id}" class="text-3xl font-extrabold text-white tracking-tight">0%</span>
+                <span class="text-[11px] font-medium text-slate-400">Capacidad</span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 pt-3 border-t border-borderDark/60 text-center">
+              <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
+                <div class="text-[10px] text-slate-400 font-medium">Distancia</div>
+                <div id="cm-${c.id}" class="text-xs font-bold text-white mt-0.5">-- cm</div>
+              </div>
+              <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
+                <div class="text-[10px] text-slate-400 font-medium">Se llena en</div>
+                <div id="est-${c.id}" class="text-xs font-bold text-emerald-400 mt-0.5">--</div>
+              </div>
+              <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
+                <div class="text-[10px] text-slate-400 font-medium">Últ. Vaciado</div>
+                <div id="vac-${c.id}" class="text-xs font-bold text-slate-200 mt-0.5">--</div>
+              </div>
+            </div>
+          </div>
+        `);
+      });
+
+      const devSensorCards = document.getElementById("devSensorCards");
+      devSensorCards.innerHTML = CONFIG.compartimentos.map(c => `
+        <div class="bg-boxDark p-4 rounded-xl border border-borderDark space-y-2">
+          <div class="flex items-center justify-between text-xs font-bold text-white">
+            <span>Sensor ${c.nombre} (HC-SR04)</span>
+            <span class="text-emerald-400">OK</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Eco ultrasónico: <span class="text-slate-200 font-medium">Estable</span></p>
+          <p class="text-[11px] text-slate-400">Profundidad Máx: <span class="text-slate-200 font-medium" id="lblDepthDev-${c.id}">${state.depths[c.id-1]} cm</span></p>
+        </div>
+      `).join('');
+    }
+
+    function initDemoData() {
+      const now = Date.now();
+      const points = 25;
+      state.historial = [];
+
+      let levelOrg = 20, levelRec = 35, levelInorg = 15;
+
+      for (let i = points; i >= 0; i--) {
+        const t = now - i * (30 * 60 * 1000);
+
+        levelOrg = Math.min(95, Math.max(5, levelOrg + (Math.random() * 8 - 2)));
+        levelRec = Math.min(95, Math.max(5, levelRec + (Math.random() * 6 - 1.5)));
+        levelInorg = Math.min(95, Math.max(5, levelInorg + (Math.random() * 5 - 1)));
+
+        if (levelOrg > 85) {
+          state.vaciados.push({ t, compId: 1, pre: Math.round(levelOrg), post: 10 });
+          levelOrg = 10;
+        }
+
+        const p = [Math.round(levelOrg), Math.round(levelRec), Math.round(levelInorg)];
+        const c = p.map((val, idx) => parseFloat((state.depths[idx] * (1 - val / 100)).toFixed(1)));
+
+        state.historial.push({ t, p, c });
+      }
+      saveLocalStorage();
+    }
+
+    // PREDICCIÓN CON REGRESIÓN LINEAL
+    function duracionTxt(ms) {
+      const min = Math.round(ms / 60000);
+      if (min < 1) return "< 1 min";
+      if (min < 60) return `~${min} min`;
+      const h = Math.round(min / 60);
+      if (h < 24) return `~${h} h`;
+      const d = Math.round(h / 24);
+      return d > 30 ? "> 30 d" : `~${d} d`;
+    }
+
+    function estimarTiempoLlenado(compIndex, pctActual) {
+      if (pctActual >= CONFIG.umbrales.lleno) return "¡Lleno!";
+      const lastVacTime = state.vaciados.filter(v => v.compId === compIndex + 1).slice(-1)[0]?.t || 0;
+      const pts = state.historial.filter(h => h.t > lastVacTime && h.p[compIndex] != null).slice(-CONFIG.puntosRitmo);
+
+      if (pts.length < 2 || pts[pts.length - 1].t - pts[0].t < 60000) return "Estimando...";
+
+      const n = pts.length;
+      const mx = pts.reduce((s, h) => s + h.t, 0) / n;
+      const my = pts.reduce((s, h) => s + h.p[compIndex], 0) / n;
+
+      let num = 0, den = 0;
+      pts.forEach(h => {
+        num += (h.t - mx) * (h.p[compIndex] - my);
+        den += (h.t - mx) ** 2;
+      });
+
+      const pendiente = num / den; // Incremento en % por milisegundo
+      if (!(pendiente > 0)) return "Estable";
+
+      const msRestantes = (CONFIG.umbrales.lleno - pctActual) / pendiente;
+      return duracionTxt(msRestantes);
+    }
+
+    function tiempoRelativoVaciado(compId) {
+      const v = state.vaciados.filter(item => item.compId === compId).slice(-1)[0];
+      if (!v) return "--";
+      const hoy = new Date(); hoy.setHours(0,0,0,0);
+      if (v.t >= hoy.getTime()) return new Date(v.t).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+      const dias = Math.ceil((hoy.getTime() - v.t) / 864e5);
+      return `Hace ${dias}d`;
+    }
+
+    // TELEMETRÍA API PARTICLE & DEMO
+    async function fetchTelemetry() {
+      if (state.demoMode) {
+        const last = state.historial[state.historial.length - 1] || { p: [20, 20, 20] };
+        const t = Date.now();
+
+        let newOrg = Math.min(100, Math.max(0, last.p[0] + Math.floor(Math.random() * 4 - 1)));
+        let newRec = Math.min(100, Math.max(0, last.p[1] + Math.floor(Math.random() * 5 - 1)));
+        let newInorg = Math.min(100, Math.max(0, last.p[2] + Math.floor(Math.random() * 3 - 1)));
+
+        [newOrg, newRec, newInorg].forEach((val, idx) => {
+          if (last.p[idx] - val >= CONFIG.caidaVaciado) {
+            triggerVaciadoDetected(idx + 1, last.p[idx], val, t);
+          }
+        });
+
+        const p = [newOrg, newRec, newInorg];
+        const c = p.map((val, idx) => parseFloat((state.depths[idx] * (1 - val / 100)).toFixed(1)));
+
+        state.historial.push({ t, p, c });
+        if (state.historial.length > 500) state.historial.shift();
+        saveLocalStorage();
+
+        renderAll();
+      } else {
+        // VALIDACIÓN: Evita hacer peticiones con Token vacío
+        if (!state.token || state.token.trim() === "") {
+          document.getElementById("aviso").hidden = false;
+          document.getElementById("avisoTxt").textContent = "Inicia sesión en Particle Cloud para ver las lecturas en vivo.";
+          return;
+        }
+
+        try {
+          if (!state.baseApi || !state.baseApi.startsWith("https://api.particle.io")) {
+            state.baseApi = `https://api.particle.io/v1/devices/${state.deviceId || CONFIG.deviceIdDefault}`;
+          }
+
+          const r = await fetch(`${state.baseApi}/datos`, {
+            headers: { "Authorization": "Bearer " + state.token }
+          });
+          
+          const texto = await r.text();
+
+          if (texto.trim().startsWith("<")) {
+            throw new Error("Respuesta HTML recibida de Particle Cloud. Revisa la conectividad del dispositivo.");
+          }
+
+          const j = JSON.parse(texto);
+          if (j.error === "invalid_token" || j.error === "invalid_request") {
+            state.token = "";
+            sessionStorage.removeItem("pt");
+            updateModeStatus();
+            throw new Error("Sesión de Particle expirada. Vuelve a iniciar sesión.");
+          }
+          if (j.error) throw new Error(j.error_description || j.error);
+
+          const d = typeof j.result === "string" ? JSON.parse(j.result) : j.result;
+          
+          processParticleData(d, j.coreInfo);
+          document.getElementById("aviso").hidden = true;
+        } catch (err) {
+          document.getElementById("aviso").hidden = false;
+          document.getElementById("avisoTxt").textContent = "Error Particle API: " + err.message;
+        }
+      }
+    }
+
+    async function llamarParticleFunc(fn, arg) {
+      if (state.demoMode) return { result: 1 };
+      const r = await fetch(`${state.baseApi}/${fn}`, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + state.token,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({ arg })
+      });
+      return await r.json();
+    }
+
+    async function fetchHardwareInterval() {
+      if (state.demoMode || !state.token) return;
+      try {
+        const r = await fetch(`${state.baseApi}/minutos`, {
+          headers: { "Authorization": "Bearer " + state.token }
+        });
+        const j = await r.json();
+        if (j.result !== undefined) {
+          document.getElementById("selMin").value = j.result;
+        }
+      } catch (_) {}
+    }
+
+    function triggerVaciadoDetected(compId, preVal, postVal, timestamp) {
+      state.vaciados.unshift({ t: timestamp, compId, pre: preVal, post: postVal });
+      if (state.vaciados.length > 50) state.vaciados.pop();
+      saveLocalStorage();
+
+      renderVaciadosTable();
+      if (state.audioEnabled) playTone(523.25, 0.15);
+    }
+
+    function processParticleData(d, coreInfo) {
+      const t = d.t ? d.t * 1000 : Date.now();
+      
+      const c = [d.c1 || 0, d.c2 || 0, d.c3 || 0];
+      let p = [];
+
+      if (d.p1 !== undefined && d.p2 !== undefined && d.p3 !== undefined) {
+        p = [d.p1, d.p2, d.p3];
+      } else {
+        p = c.map((dist, i) => {
+          if (dist < 0) return 0;
+          const pct = ((state.depths[i] - dist) / (state.depths[i] - 3.0)) * 100;
+          return Math.max(0, Math.min(100, Math.round(pct)));
+        });
+      }
+
+      const last = state.historial[state.historial.length - 1];
+      if (last) {
+        p.forEach((val, idx) => {
+          if (last.p[idx] - val >= CONFIG.caidaVaciado) {
+            triggerVaciadoDetected(idx + 1, last.p[idx], val, t);
+          }
+        });
+      }
+
+      state.historial.push({ t, p, c });
+      if (state.historial.length > 500) state.historial.shift();
+      saveLocalStorage();
+
+      const isConnected = coreInfo && coreInfo.connected;
+      const statusBadge = document.getElementById("statusBadge");
+      const horaStr = new Date(t).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+      if (isConnected) {
+        statusBadge.textContent = `Photon en línea · Última: ${horaStr}`;
+        statusBadge.className = "text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+      } else {
+        statusBadge.textContent = `Photon sin conexión · Última: ${horaStr}`;
+        statusBadge.className = "text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20";
+      }
+
+      p.forEach((pct, idx) => {
+        if (pct >= CONFIG.umbrales.lleno && state.pushEnabled) {
+          sendPushNotification(`Contenedor ${CONFIG.compartimentos[idx].nombre} Lleno`, `El contenedor alcanzó un ${pct}% de su capacidad.`);
+        }
+      });
+
+      renderAll();
+    }
+
+    function getStatusBadge(pct) {
+      if (pct >= CONFIG.umbrales.lleno) return { txt: "¡Lleno!", cls: "badge-lleno" };
+      if (pct >= CONFIG.umbrales.casiLleno) return { txt: "Casi Lleno", cls: "badge-casi-lleno" };
+      if (pct >= CONFIG.umbrales.medio) return { txt: "Medio", cls: "badge-medio" };
+      return { txt: "Normal", cls: "badge-normal" };
+    }
+
+    function renderAll() {
+      const current = state.historial[state.historial.length - 1];
+      if (!current) return;
+
+      CONFIG.compartimentos.forEach((c, i) => {
+        const pct = current.p[i];
+        const cm = current.c[i];
+        const status = getStatusBadge(pct);
+
+        const ring = document.getElementById(`ring-${c.id}`);
+        const strokeDash = (pct / 100) * 490;
+        ring.style.strokeDasharray = `${strokeDash} 490`;
+
+        document.getElementById(`pct-${c.id}`).textContent = `${pct}%`;
+        document.getElementById(`cm-${c.id}`).textContent = `${cm} cm`;
+        document.getElementById(`est-${c.id}`).textContent = estimarTiempoLlenado(i, pct);
+        document.getElementById(`vac-${c.id}`).textContent = tiempoRelativoVaciado(c.id);
+
+        const badge = document.getElementById(`badge-${c.id}`);
+        badge.textContent = status.txt;
+        badge.className = `px-2.5 py-1 rounded-full text-[11px] font-bold ${status.cls}`;
+      });
+
+      renderAreaChart();
+      renderDonutChart(current.p);
+      renderVaciadosTable();
+      renderHistoryTable();
+    }
+
+    function renderAreaChart() {
+      const svg = document.getElementById("chartSvg");
+      const wrapper = document.getElementById("graficaWrapper");
+      const W = wrapper.clientWidth || 600;
+      const H = wrapper.clientHeight || 240;
+
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+      const now = Date.now();
+      const cutoff = now - state.selectedRangeHours * 3600 * 1000;
+      const pts = state.historial.filter(h => h.t >= cutoff);
+
+      if (pts.length < 2) {
+        svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#8a9bb8" text-anchor="middle" font-size="12">Recopilando telemetría...</text>`;
+        return;
+      }
+
+      const margin = { top: 20, right: 15, bottom: 30, left: 35 };
+      const innerW = W - margin.left - margin.right;
+      const innerH = H - margin.top - margin.bottom;
+
+      const minT = pts[0].t;
+      const maxT = pts[pts.length - 1].t;
+
+      const getX = t => margin.left + ((t - minT) / (maxT - minT || 1)) * innerW;
+      const getY = val => margin.top + (1 - val / 100) * innerH;
+
+      let svgContent = `
+        <defs>
+          <linearGradient id="grad-1" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4ade80" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#4ade80" stop-opacity="0.0"/>
+          </linearGradient>
+          <linearGradient id="grad-2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.0"/>
+          </linearGradient>
+          <linearGradient id="grad-3" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.0"/>
+          </linearGradient>
+        </defs>
+      `;
+
+      [0, 25, 50, 75, 100].forEach(v => {
+        const y = getY(v);
+        svgContent += `<line x1="${margin.left}" y1="${y}" x2="${W - margin.right}" y2="${y}" stroke="#1f2a44" stroke-dasharray="2 2"/>`;
+        svgContent += `<text x="${margin.left - 8}" y="${y + 4}" fill="#8a9bb8" font-size="10" text-anchor="end">${v}%</text>`;
+      });
+
+      CONFIG.compartimentos.forEach((c, idx) => {
+        let pathD = "";
+        let areaD = "";
+
+        pts.forEach((h, i) => {
+          const x = getX(h.t);
+          const y = getY(h.p[idx]);
+
+          if (i === 0) {
+            pathD += `M ${x} ${y}`;
+            areaD += `M ${x} ${margin.top + innerH} L ${x} ${y}`;
+          } else {
+            pathD += ` L ${x} ${y}`;
+            areaD += ` L ${x} ${y}`;
+          }
+        });
+
+        const lastX = getX(pts[pts.length - 1].t);
+        areaD += ` L ${lastX} ${margin.top + innerH} Z`;
+
+        svgContent += `<path d="${areaD}" fill="url(#grad-${c.id})"/>`;
+        svgContent += `<path d="${pathD}" fill="none" stroke="${c.colorHex}" stroke-width="2.5" stroke-linecap="round"/>`;
+      });
+
+      svgContent += `<line id="hoverLine" class="chart-hover-line hidden" x1="0" y1="${margin.top}" x2="0" y2="${H - margin.bottom}"/>`;
+      svg.innerHTML = svgContent;
+
+      wrapper.onmousemove = (e) => {
+        const rect = wrapper.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+
+        if (mouseX < margin.left || mouseX > W - margin.right) return;
+
+        const hoverT = minT + ((mouseX - margin.left) / innerW) * (maxT - minT);
+        let closest = pts[0];
+        let minDiff = Math.abs(pts[0].t - hoverT);
+
+        pts.forEach(p => {
+          const diff = Math.abs(p.t - hoverT);
+          if (diff < minDiff) { minDiff = diff; closest = p; }
+        });
+
+        const hoverLine = document.getElementById("hoverLine");
+        if (hoverLine) {
+          const cx = getX(closest.t);
+          hoverLine.setAttribute("x1", cx);
+          hoverLine.setAttribute("x2", cx);
+          hoverLine.classList.remove("hidden");
+        }
+
+        const tooltip = document.getElementById("chartTooltip");
+        const timeStr = new Date(closest.t).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        
+        tooltip.innerHTML = `
+          <div class="font-bold text-white mb-1 border-b border-slate-700 pb-1">${timeStr}</div>
+          <div class="flex items-center justify-between gap-4 text-emerald-400"><span>Orgánico:</span><b>${closest.p[0]}%</b></div>
+          <div class="flex items-center justify-between gap-4 text-sky-400"><span>Reciclable:</span><b>${closest.p[1]}%</b></div>
+          <div class="flex items-center justify-between gap-4 text-amber-400"><span>Inorgánico:</span><b>${closest.p[2]}%</b></div>
+        `;
+
+        tooltip.style.left = `${getX(closest.t)}px`;
+        tooltip.style.top = `${getY(Math.max(...closest.p)) - 10}px`;
+        tooltip.classList.remove("hidden");
+      };
+
+      wrapper.onmouseleave = () => {
+        const hoverLine = document.getElementById("hoverLine");
+        if (hoverLine) hoverLine.classList.add("hidden");
+        document.getElementById("chartTooltip").classList.add("hidden");
+      };
+    }
+
+    function renderDonutChart(currentP) {
+      const svg = document.getElementById("donutSvg");
+      const sum = currentP.reduce((a, b) => a + b, 0);
+      const avg = Math.round(sum / 3);
+
+      document.getElementById("donutTotalVol").textContent = `${avg}%`;
+      document.getElementById("pctDonutOrg").textContent = `${currentP[0]}%`;
+      document.getElementById("pctDonutRec").textContent = `${currentP[1]}%`;
+      document.getElementById("pctDonutInorg").textContent = `${currentP[2]}%`;
+
+      if (sum === 0) {
+        svg.innerHTML = `<circle cx="50" cy="50" r="38" stroke="#1f2a44" stroke-width="12" fill="none"/>`;
+        return;
+      }
+
+      const r = 38;
+      const circ = 2 * Math.PI * r;
+      let offset = 0;
+
+      const colors = ["#4ade80", "#38bdf8", "#f59e0b"];
+      let svgPaths = `<circle cx="50" cy="50" r="${r}" stroke="#1f2a44" stroke-width="12" fill="none"/>`;
+
+      currentP.forEach((val, idx) => {
+        const strokeDash = (val / 100) * (circ / 3);
+        svgPaths += `
+          <circle cx="50" cy="50" r="${r}" 
+            stroke="${colors[idx]}" 
+            stroke-width="12" 
+            fill="none"
+            stroke-dasharray="${strokeDash} ${circ}"
+            stroke-dashoffset="${-offset}"
+            class="ring-circle"
+          />
+        `;
+        offset += strokeDash;
+      });
+
+      svg.innerHTML = svgPaths;
+    }
+
+    function renderVaciadosTable() {
+      const tbody = document.getElementById("tbVaciadosDash");
+      if (state.vaciados.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-500">No se han registrado eventos de vaciado recientemente.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = state.vaciados.slice(0, 5).map(v => {
+        const comp = CONFIG.compartimentos.find(c => c.id === v.compId);
+        const timeStr = new Date(v.t).toLocaleString("es-MX", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" });
+        return `
+          <tr class="hover:bg-boxDark/50 transition">
+            <td class="p-3 font-semibold text-white">${timeStr}</td>
+            <td class="p-3"><span class="flex items-center gap-1.5 font-bold" style="color:${comp.colorHex}">${getIco(comp.icono)} ${comp.nombre}</span></td>
+            <td class="p-3 font-bold text-red-400">${v.pre}%</td>
+            <td class="p-3 font-bold text-emerald-400">${v.post}%</td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Vaciado Confirmado</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderHistoryTable() {
+      const tbody = document.getElementById("tbHistorialFull");
+      const search = document.getElementById("searchHistory").value.toLowerCase();
+
+      let filtered = [...state.historial].reverse();
+
+      if (search) {
+        filtered = filtered.filter(h => new Date(h.t).toLocaleString("es-MX").toLowerCase().includes(search));
+      }
+
+      document.getElementById("lblTotalRegs").textContent = filtered.length;
+
+      tbody.innerHTML = filtered.slice(0, 50).map(h => {
+        const timeStr = new Date(h.t).toLocaleString("es-MX");
+        return `
+          <tr class="hover:bg-boxDark/50 transition">
+            <td class="p-3 font-medium text-slate-200">${timeStr}</td>
+            <td class="p-3 font-bold text-emerald-400">${h.p[0]}%</td>
+            <td class="p-3 font-bold text-sky-400">${h.p[1]}%</td>
+            <td class="p-3 font-bold text-amber-400">${h.p[2]}%</td>
+            <td class="p-3 text-slate-400">${h.c[0]} cm</td>
+            <td class="p-3 text-slate-400">${h.c[1]} cm</td>
+            <td class="p-3 text-slate-400">${h.c[2]} cm</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function playTone(freq, duration) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch (_) {}
+    }
+
+    function sendPushNotification(title, body) {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      new Notification(title, { body, icon: "https://cdn-icons-png.flaticon.com/512/3299/3299935.png" });
+    }
+
+    function exportToCsv() {
+      let csv = "Timestamp,Fecha_Hora,Organico_Pct,Reciclable_Pct,Inorganico_Pct,Dist_Org_cm,Dist_Rec_cm,Dist_Inorg_cm\n";
+      state.historial.forEach(h => {
+        const dateStr = `"${new Date(h.t).toLocaleString("es-MX")}"`;
+        csv += `${h.t},${dateStr},${h.p[0]},${h.p[1]},${h.p[2]},${h.c[0]},${h.c[1]},${h.c[2]}\n`;
+      });
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bote_inteligente_telemetria_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function updateModeStatus() {
+      const dot = document.getElementById("modeDot");
+      const txt = document.getElementById("modeTxt");
+      const btnModal = document.getElementById("lblLoginBtnText");
+      const btnLogoutModal = document.getElementById("btnCerrarSesionModal");
+
+      if (state.demoMode) {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
+        txt.textContent = "Modo Demo";
+        btnModal.textContent = "Conectar Particle API";
+        btnLogoutModal.classList.add("hidden");
+      } else {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse";
+        txt.textContent = "Modo Particle API";
+        btnModal.textContent = "Cuenta Particle Activa";
+        btnLogoutModal.classList.remove("hidden");
+      }
+    }
+
+    function setupEventListeners() {
+      document.getElementById("btnGuardarUmbralesVac").onclick = async () => {
+        const pre = document.getElementById("inputPreVac").value;
+        const post = document.getElementById("inputPostVac").value;
+        const msg = document.getElementById("msgUmbralesVac");
+
+        if (!pre || !post) {
+          msg.textContent = "Ingresa ambos valores antes de guardar.";
+          return;
+        }
+
+        msg.textContent = "Enviando configuración a la Photon...";
+        try {
+          const res = await llamarParticleFunc("configVaciado", `${pre},${post}`);
+          if (res.return_value === 1 || state.demoMode) {
+            msg.textContent = `¡Umbrales actualizados! Se avisará cuando baje de ≥${pre}% a ≤${post}%.`;
+            msg.className = "text-[11px] text-emerald-400 text-center";
+        
+            localStorage.setItem("umbralPreVac", pre);
+            localStorage.setItem("umbralPostVac", post);
+          } else {
+            throw new Error("La Photon no pudo procesar la solicitud.");
+          }
+        } catch (err) {
+          msg.textContent = "Error al guardar: " + err.message;
+          msg.className = "text-[11px] text-red-400 text-center";
+        }
+      };
+
+      const savedPre = localStorage.getItem("umbralPreVac") || "60";
+      const savedPost = localStorage.getItem("umbralPostVac") || "10";
+      document.getElementById("inputPreVac").value = savedPre;
+      document.getElementById("inputPostVac").value = savedPost;
+
+      document.querySelectorAll(".nav-item").forEach(btn => {
+        btn.onclick = () => {
+          const tabId = btn.dataset.tab;
+          
+          document.querySelectorAll(".nav-item").forEach(b => {
+            b.className = "nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all";
+          });
+          btn.className = "nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all bg-blue-600/15 text-blue-400 border border-blue-500/30";
+
+          document.querySelectorAll(".tab-pane").forEach(pane => pane.classList.add("hidden"));
+          document.getElementById(`tab-${tabId}`).classList.remove("hidden");
+
+          const titles = {
+            dashboard: "Dashboard General",
+            history: "Historial y Eventos",
+            alerts: "Alertas y Reglas",
+            device: "Salud del Dispositivo",
+            calibration: "Calibración de Altura"
+          };
+          document.getElementById("viewTitle").textContent = titles[tabId] || "Dashboard";
+        };
+      });
+
+      document.getElementById("btnToggleDemo").onclick = () => {
+        state.demoMode = !state.demoMode;
+        updateModeStatus();
+        fetchTelemetry();
+      };
+
+      document.querySelectorAll("#rangeSelector button").forEach(btn => {
+        btn.onclick = () => {
+          document.querySelectorAll("#rangeSelector button").forEach(b => {
+            b.className = "px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition";
+          });
+          btn.className = "px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white shadow-sm transition";
+          state.selectedRangeHours = parseInt(btn.dataset.range);
+          renderAreaChart();
+        };
+      });
+
+      document.getElementById("btnAct").onclick = async () => {
+        const btn = document.getElementById("btnAct");
+        btn.disabled = true;
+        btn.classList.add("opacity-50", "cursor-wait");
+        try {
+          if (!state.demoMode) {
+            await llamarParticleFunc("medir", "1");
+          }
+          await fetchTelemetry();
+        } catch (e) {
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+          btn.classList.remove("opacity-50", "cursor-wait");
+        }
+      };
+
+      document.getElementById("selMin").onchange = async (e) => {
+        const mins = e.target.value;
+        if (!state.demoMode) {
+          try {
+            await llamarParticleFunc("intervalo", mins);
+          } catch (err) { console.error(err); }
+        }
+        clearInterval(state.timer);
+        state.timer = setInterval(fetchTelemetry, parseInt(mins) * 60 * 1000);
+      };
+
+      document.getElementById("btnLoginModal").onclick = () => document.getElementById("loginModal").classList.remove("hidden");
+      document.getElementById("btnCloseLogin").onclick = () => document.getElementById("loginModal").classList.add("hidden");
+      document.getElementById("btnEntrar").onclick = loginParticle;
+
+      document.getElementById("btnCerrarSesionModal").onclick = () => {
+        state.token = "";
+        sessionStorage.removeItem("pt");
+        sessionStorage.removeItem("pd");
+        state.demoMode = true;
+        updateModeStatus();
+        document.getElementById("loginModal").classList.add("hidden");
+        fetchTelemetry();
+      };
+
+      document.getElementById("btnExportCsv").onclick = exportToCsv;
+      document.getElementById("searchHistory").oninput = renderHistoryTable;
+      document.getElementById("filterComp").onchange = renderHistoryTable;
+
+      document.getElementById("frmCalib").onsubmit = (e) => {
+        e.preventDefault();
+        state.depths = [
+          parseFloat(document.getElementById("depth1").value),
+          parseFloat(document.getElementById("depth2").value),
+          parseFloat(document.getElementById("depth3").value)
+        ];
+        localStorage.setItem("bote_depths", JSON.stringify(state.depths));
+        
+        CONFIG.compartimentos.forEach(c => {
+          document.getElementById(`lblDepthDev-${c.id}`).textContent = `${state.depths[c.id-1]} cm`;
+        });
+
+        alert("¡Calibración guardada exitosamente!");
+        renderAll();
+      };
+
+      document.getElementById("btnTogglePush").onclick = () => {
+        if (!("Notification" in window)) {
+          alert("Este navegador no soporta notificaciones push.");
+          return;
+        }
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            state.pushEnabled = !state.pushEnabled;
+            const btn = document.getElementById("btnTogglePush");
+            btn.textContent = state.pushEnabled ? "Activado" : "Desactivado";
+            btn.className = state.pushEnabled 
+              ? "px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white transition"
+              : "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 transition";
+          }
+        });
+      };
+
+      document.getElementById("btnToggleAudio").onclick = () => {
+        state.audioEnabled = !state.audioEnabled;
+        const btn = document.getElementById("btnToggleAudio");
+        btn.textContent = state.audioEnabled ? "Activado" : "Desactivado";
+        btn.className = state.audioEnabled 
+          ? "px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white transition"
+          : "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 transition";
+      };
+
+      document.getElementById("btnTestSound").onclick = () => playTone(880, 0.4);
+    }
+
+    // LOGIN DE PARTICLE
+    async function loginParticle() {
+      const email = document.getElementById("email").value.trim();
+      const pass = document.getElementById("pass").value;
+      const devId = document.getElementById("devId").value.trim() || CONFIG.deviceIdDefault;
+      const otp = document.getElementById("otp").value.trim();
+      const msg = document.getElementById("msg");
+
+      msg.textContent = "Conectando con Particle Cloud...";
+
+      try {
+        const bodyParams = state.mfaToken 
+          ? { grant_type: "urn:custom:mfa-otp", mfa_token: state.mfaToken, otp: otp }
+          : { grant_type: "password", username: email, password: pass };
+
+        const r = await fetch("https://api.particle.io/oauth/token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Authorization": "Basic " + btoa("particle:particle")
+          },
+          body: new URLSearchParams({ expires_in: "28800", ...bodyParams })
+        });
+        
+        const j = await r.json();
+
+        if (j.error === "mfa_required") {
+          state.mfaToken = j.mfa_token;
+          document.getElementById("otpBox").classList.remove("hidden");
+          msg.textContent = "Escribe tu código de verificación OTP y vuelve a presionar Entrar.";
+          return;
+        }
+
+        if (!j.access_token) throw new Error(j.error_description || j.error || "No se pudo iniciar sesión");
+
+        state.token = j.access_token;
+        state.deviceId = devId;
+        state.baseApi = `https://api.particle.io/v1/devices/${state.deviceId}`;
+        state.demoMode = false;
+        state.mfaToken = null;
+
+        sessionStorage.setItem("pt", state.token);
+        sessionStorage.setItem("pd", state.deviceId);
+
+        document.getElementById("loginModal").classList.add("hidden");
+        updateModeStatus();
+        fetchHardwareInterval();
+        fetchTelemetry();
+      } catch (e) {
+        msg.textContent = "Error: " + e.message;
+      }
+    }
+  </script>
+</body>
+</html>
