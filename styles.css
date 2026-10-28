@@ -1,0 +1,112 @@
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0b1220;
+}
+::-webkit-scrollbar-thumb {
+  background: #24314d;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
+}
+
+:root {
+  --bg: #0b1220;
+  --card: #121b2e;
+  --borde: #24314d;
+  --caja: #18233a;
+  --texto: #e6edf7;
+  --suave: #8a9bb8;
+  --pista: #1f2a44;
+  --organico: #4ade80;
+  --reciclable: #38bdf8;
+  --inorganico: #f59e0b;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg);
+  color: var(--texto);
+}
+
+.ring-circle {
+  transition: stroke-dasharray 0.7s ease, stroke 0.3s ease;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.badge-normal {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+.badge-medio {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.badge-casi-lleno {
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+.badge-lleno {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.badge-off {
+  background: rgba(138, 155, 184, 0.15);
+  color: #8a9bb8;
+  border: 1px solid rgba(138, 155, 184, 0.3);
+}
+
+.chart-hover-line {
+  stroke: #3b82f6;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  pointer-events: none;
+} 
+
+/* Corrección de color para menús desplegables (select / option) */
+select option {
+  background-color: #18233a;
+  color: #e6edf7;
+}
+
+/* Ajustes para OpenStreetMap (Leaflet) */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background-color: #ffffff;
+  border-radius: 8px;
+}
+.leaflet-container {
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* Corrección de renderizado y visualización para OpenStreetMap / Leaflet */
+#map {
+  width: 100%;
+  height: 500px;
+  min-height: 400px;
+  z-index: 10;
+  border-radius: 0.75rem;
+}
+
+.leaflet-container {
+  background-color: #121b2e !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+}
+
+.leaflet-popup-tip {
+  background: #ffffff !important;
+}

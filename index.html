@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-[#0b1220]">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bote Inteligente - Panel de Monitoreo Pro</title>
+  
+  <!-- Fonts & Tailwind CSS -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- OpenStreetMap / Leaflet CSS y JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0b1220',
+            cardDark: '#121b2e',
+            borderDark: '#24314d',
+            boxDark: '#18233a',
+            organico: '#4ade80',
+            reciclable: '#38bdf8',
+            inorganico: '#f59e0b',
+            casiLleno: '#f97316',
+            lleno: '#ef4444',
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Script Principal JS -->
+  <script src="app.js" defer></script>
+</head>
+<body class="h-full overflow-hidden text-slate-100 flex flex-col md:flex-row">
+
+  <!-- BARRA LATERAL -->
+  <aside id="sidebar" class="w-full md:w-64 bg-cardDark border-r border-borderDark flex flex-col justify-between shrink-0 z-30 transition-all duration-300">
+    <div class="flex flex-col flex-1">
+      <div class="p-5 border-b border-borderDark flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-sky-500 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+          </div>
+          <div>
+            <h1 class="font-bold text-base leading-tight text-white tracking-tight" id="lblTituloMain">Bote Inteligente</h1>
+            <p class="text-xs text-slate-400 font-medium">Panel V2.5 Pro</p>
+          </div>
+        </div>
+      </div>
+
+      <nav class="p-3 space-y-1 flex-1 flex flex-col" id="navContainer">
+        <button data-tab="dashboard" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all bg-blue-600/15 text-blue-400 border border-blue-500/30">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+          <span>Dashboard General</span>
+        </button>
+        <button data-tab="history" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>Historial y Eventos</span>
+        </button>
+        <button data-tab="alerts" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          <span>Alertas y Reglas</span>
+        </button>
+        <button data-tab="device" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.85a10 10 0 0 1 14 0"/><path d="M8.5 16.88a5 5 0 0 1 7 0"/></svg>
+          <span>Salud del Dispositivo</span>
+        </button>
+        <button data-tab="calibration" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/></svg>
+          <span>Calibración</span>
+        </button>
+
+        <!-- Botón Ubicación posicionado al fondo del menú -->
+        <button data-tab="location" class="nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all mt-auto">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span>Ubicación</span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="p-4 border-t border-borderDark space-y-3">
+      <div class="bg-boxDark p-3 rounded-xl flex items-center justify-between border border-borderDark/60">
+        <div class="flex items-center gap-2">
+          <span id="modeDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="modeTxt" class="text-xs font-semibold text-slate-300">Modo Demo</span>
+        </div>
+        <button id="btnToggleDemo" class="text-[11px] font-bold px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 transition">
+          Cambiar
+        </button>
+      </div>
+
+      <button id="btnLoginModal" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-borderDark rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <span id="lblLoginBtnText">Conectar Particle API</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="flex-1 flex flex-col h-full overflow-hidden">
+    <header class="h-16 border-b border-borderDark bg-cardDark/50 px-6 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-3">
+        <h2 id="viewTitle" class="text-lg font-bold text-white tracking-tight">Dashboard General</h2>
+        <span id="statusBadge" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          En línea · Actualizado
+        </span>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div class="hidden sm:flex items-center gap-2 bg-boxDark px-3 py-1.5 rounded-xl border border-borderDark">
+          <span class="text-xs text-slate-400 font-medium">Intervalo Photon:</span>
+          <select id="selMin" class="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer">
+            <option value="1" class="bg-boxDark text-slate-200">Cada 1 min</option>
+            <option value="5" selected class="bg-boxDark text-slate-200">Cada 5 min</option>
+            <option value="10" class="bg-boxDark text-slate-200">Cada 10 min</option>
+            <option value="15" class="bg-boxDark text-slate-200">Cada 15 min</option>
+            <option value="30" class="bg-boxDark text-slate-200">Cada 30 min</option>
+            <option value="60" class="bg-boxDark text-slate-200">Cada 60 min</option>
+          </select>
+        </div>
+
+        <button id="btnAct" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-md shadow-blue-600/20">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+          <span>Medir Ahora</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="aviso" class="bg-red-500/10 border-b border-red-500/30 px-6 py-2.5 text-xs text-red-300 flex items-center gap-2" hidden>
+      <svg class="w-4 h-4 text-red-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span id="avisoTxt">Sin comunicación con la placa Particle. Mostrando última lectura conocida.</span>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6" id="tabContentArea">
+      <!-- TAB 1: DASHBOARD -->
+      <section id="tab-dashboard" class="tab-pane space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="gridCards"></div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 bg-cardDark border border-borderDark rounded-2xl p-5 flex flex-col justify-between shadow-sm relative">
+            <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+              <div>
+                <h3 class="font-bold text-white text-base flex items-center gap-2">
+                  <svg class="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                  Historial de Llenado Interactivo
+                </h3>
+                <p class="text-xs text-slate-400 mt-0.5">Pasa el cursor sobre la gráfica para ver valores exactos</p>
+              </div>
+
+              <div class="flex items-center gap-1 bg-boxDark p-1 rounded-xl border border-borderDark" id="rangeSelector">
+                <button data-range="6" class="px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">6h</button>
+                <button data-range="12" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white shadow-sm transition">12h</button>
+                <button data-range="24" class="px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">24h</button>
+                <button data-range="168" class="px-2.5 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">7d</button>
+              </div>
+            </div>
+
+            <div class="relative w-full h-64" id="graficaWrapper">
+              <svg id="chartSvg" class="w-full h-full overflow-visible"></svg>
+              <div id="chartTooltip" class="absolute hidden pointer-events-none bg-slate-900/95 border border-slate-700 p-3 rounded-xl shadow-xl text-xs backdrop-blur-md z-20 space-y-1 transform -translate-x-1/2 -translate-y-full"></div>
+            </div>
+
+            <div class="flex items-center justify-center gap-6 mt-4 pt-3 border-t border-borderDark/60 text-xs text-slate-400">
+              <span class="flex items-center gap-2"><i class="w-2.5 h-2.5 rounded-sm bg-emerald-400"></i> Orgánico</span>
+              <span class="flex items-center gap-2"><i class="w-2.5 h-2.5 rounded-sm bg-sky-400"></i> Reciclable</span>
+              <span class="flex items-center gap-2"><i class="w-2.5 h-2.5 rounded-sm bg-amber-400"></i> Inorgánico</span>
+            </div>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 flex flex-col justify-between shadow-sm">
+            <div>
+              <h3 class="font-bold text-white text-base flex items-center gap-2 mb-1">
+                <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                Proporción de Residuos
+              </h3>
+              <p class="text-xs text-slate-400">Distribución porcentual del uso actual del bote inteligente.</p>
+            </div>
+
+            <div class="relative w-48 h-48 mx-auto my-4 flex items-center justify-center">
+              <svg id="donutSvg" class="w-full h-full" viewBox="0 0 100 100"></svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span id="donutTotalVol" class="text-xl font-extrabold text-white">0%</span>
+                <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Llenado Total</span>
+              </div>
+            </div>
+
+            <div class="space-y-2 pt-2 border-t border-borderDark/60 text-xs">
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-emerald-400"></i> Orgánico:</span>
+                <span id="pctDonutOrg" class="font-bold text-white">0%</span>
+              </div>
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-sky-400"></i> Reciclable:</span>
+                <span id="pctDonutRec" class="font-bold text-white">0%</span>
+              </div>
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-amber-400"></i> Inorgánico:</span>
+                <span id="pctDonutInorg" class="font-bold text-white">0%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+              Últimos Eventos de Vaciado Detectados
+            </h3>
+            <span class="text-xs text-slate-400">Detección automática por caída &ge; 25%</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-boxDark text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-borderDark">
+                <tr>
+                  <th class="p-3">Hora del Vaciado</th>
+                  <th class="p-3">Compartimento</th>
+                  <th class="p-3">Nivel Prev.</th>
+                  <th class="p-3">Nivel Post.</th>
+                  <th class="p-3">Estado</th>
+                </tr>
+              </thead>
+              <tbody id="tbVaciadosDash" class="divide-y divide-borderDark/60"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB UBICACIÓN (OPENSTREETMAP) -->
+      <section id="tab-location" class="tab-pane hidden space-y-6">
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-4">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 class="font-bold text-white text-lg flex items-center gap-2">
+                <svg class="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                Ubicación del Dispositivo (Particle Photon)
+              </h3>
+              <p class="text-xs text-slate-400">Mapa geográfico del bote inteligente mediante OpenStreetMap</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs text-slate-300 bg-boxDark px-3 py-1.5 rounded-xl border border-borderDark">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span class="font-semibold text-emerald-400">GPS / Dispositivo En Línea</span>
+            </div>
+          </div>
+
+          <div id="map" class="w-full h-[480px] rounded-xl border border-borderDark z-10"></div>
+        </div>
+      </section>
+
+      <!-- TAB 2: HISTORIAL -->
+      <section id="tab-history" class="tab-pane hidden space-y-6">
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-6">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 class="font-bold text-white text-lg">Registro Completo de Mediciones</h3>
+              <p class="text-xs text-slate-400">Historial de telemetría capturado localmente y por la Particle Photon</p>
+            </div>
+
+            <button id="btnExportCsv" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-md shadow-emerald-600/20">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Exportar a CSV</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <input id="searchHistory" type="text" placeholder="Buscar por fecha u hora..." class="bg-boxDark border border-borderDark rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+            <select id="filterComp" class="bg-boxDark border border-borderDark rounded-xl px-4 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="all" class="bg-boxDark text-slate-200">Todos los compartimentos</option>
+              <option value="1" class="bg-boxDark text-slate-200">Orgánico</option>
+              <option value="2" class="bg-boxDark text-slate-200">Reciclable</option>
+              <option value="3" class="bg-boxDark text-slate-200">Inorgánico</option>
+            </select>
+            <div class="text-xs text-slate-400 flex items-center justify-end font-semibold">
+              Total registros: <span id="lblTotalRegs" class="ml-1 text-white">0</span>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto rounded-xl border border-borderDark">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-boxDark text-slate-400 font-semibold uppercase text-[10px] tracking-wider border-b border-borderDark">
+                <tr>
+                  <th class="p-3">Timestamp</th>
+                  <th class="p-3">Orgánico (%)</th>
+                  <th class="p-3">Reciclable (%)</th>
+                  <th class="p-3">Inorgánico (%)</th>
+                  <th class="p-3">Distancia Org (cm)</th>
+                  <th class="p-3">Distancia Rec (cm)</th>
+                  <th class="p-3">Distancia Inorg (cm)</th>
+                </tr>
+              </thead>
+              <tbody id="tbHistorialFull" class="divide-y divide-borderDark/60"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: ALERTAS -->
+      <section id="tab-alerts" class="tab-pane hidden space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-5">
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><polyline points="10 11 10 17"/><polyline points="14 11 14 17"/></svg>
+              Reglas de Notificación de Vaciado (Telegram)
+            </h3>
+            <p class="text-xs text-slate-400">Define las condiciones de cambio de nivel para enviar el mensaje automático de vaciado a Telegram.</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-300 mb-1">Nivel Previo Mínimo (%)</label>
+                <input type="number" id="inputPreVac" value="60" min="10" max="100" class="w-full bg-boxDark border border-borderDark rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                <span class="text-[10px] text-slate-500">Estar al menos a este % antes de vaciar</span>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-300 mb-1">Nivel Posterior Máximo (%)</label>
+                <input type="number" id="inputPostVac" value="10" min="0" max="50" class="w-full bg-boxDark border border-borderDark rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+                <span class="text-[10px] text-slate-500">Caer por debajo de este % para confirmar</span>
+              </div>
+            </div>
+
+            <button id="btnGuardarUmbralesVac" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-md shadow-emerald-600/20">
+              Guardar Regla de Vaciado en Photon
+            </button>
+            <div id="msgUmbralesVac" class="text-[11px] text-slate-400 text-center min-h-[1.2em]"></div>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-5">
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/></svg>
+              Umbrales de Alerta de Llenado
+            </h3>
+            <p class="text-xs text-slate-400">Define los niveles en los que el sistema cambia el estado de las tarjetas y activa notificaciones.</p>
+
+            <div class="space-y-4">
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-emerald-400">Normal / Bajo</span>
+                  <span>0% a &lt; 50%</span>
+                </div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-emerald-400 h-full w-[50%]"></div></div>
+              </div>
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-amber-400">Nivel Medio</span>
+                  <span>50% a 79%</span>
+                </div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-amber-400 h-full w-[79%]"></div></div>
+              </div>
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-red-400">Completamente Lleno (Crítico)</span>
+                  <span>&ge; 80%</span>
+                </div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-red-400 h-full w-full"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-5">
+            <h3 class="font-bold text-white text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              Canales & Notificaciones Push
+            </h3>
+            <p class="text-xs text-slate-400">Activa notificaciones de escritorio y alertas sonoras sintetizadas por audio.</p>
+
+            <div class="space-y-4 pt-2">
+              <div class="flex items-center justify-between p-3 bg-boxDark rounded-xl border border-borderDark">
+                <div>
+                  <h4 class="text-xs font-bold text-white">Notificaciones del Navegador</h4>
+                  <p class="text-[11px] text-slate-400">Alertas flotantes cuando un bote llega al umbral crítico</p>
+                </div>
+                <button id="btnTogglePush" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 transition">Desactivado</button>
+              </div>
+
+              <div class="flex items-center justify-between p-3 bg-boxDark rounded-xl border border-borderDark">
+                <div>
+                  <h4 class="text-xs font-bold text-white">Alerta Sonora (Beep)</h4>
+                  <p class="text-[11px] text-slate-400">Tono de audio al detectar contenedor lleno</p>
+                </div>
+                <button id="btnToggleAudio" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 transition">Desactivado</button>
+              </div>
+
+              <button id="btnTestSound" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-borderDark rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+                <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                <span>Probar Tono de Alerta</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: SALUD -->
+      <section id="tab-device" class="tab-pane hidden space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-400">Señal WiFi (Particle Photon)</span>
+              <svg class="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.85a10 10 0 0 1 14 0"/><path d="M8.5 16.88a5 5 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            </div>
+            <div class="text-2xl font-extrabold text-white" id="devRssiVal">-64 dBm</div>
+            <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden">
+              <div id="devRssiBar" class="bg-emerald-400 h-full w-[75%]"></div>
+            </div>
+            <p class="text-[11px] text-slate-400">Calidad de señal: <span class="text-emerald-400 font-bold">Excelente</span></p>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-400">Alimentación</span>
+              <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="16" height="10" x="2" y="7" rx="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/><line x1="10" x2="14" y1="12" y2="12"/></svg>
+            </div>
+            <div class="text-2xl font-extrabold text-white">5.1 V (Micro-USB)</div>
+            <p class="text-[11px] text-slate-400">Estado: <span class="text-emerald-400 font-bold">Alimentación continua activa</span></p>
+          </div>
+
+          <div class="bg-cardDark border border-borderDark rounded-2xl p-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-400">Tiempo de Operación</span>
+              <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="text-2xl font-extrabold text-white" id="devUptime">Operativo</div>
+            <p class="text-[11px] text-slate-400">Firmware: <span class="text-indigo-400 font-bold">v3.1.0 Particle OS</span></p>
+          </div>
+        </div>
+
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-6 space-y-4">
+          <h3 class="font-bold text-white text-base">Estado Físico de Sensores Ultrasónicos (HC-SR04)</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4" id="devSensorCards"></div>
+        </div>
+      </section>
+
+      <!-- TAB 5: CALIBRACIÓN -->
+      <section id="tab-calibration" class="tab-pane hidden space-y-6">
+        <div class="bg-cardDark border border-borderDark rounded-2xl p-6 max-w-2xl space-y-6">
+          <div>
+            <h3 class="font-bold text-white text-lg">Calibración de Altura de Contenedores</h3>
+            <p class="text-xs text-slate-400">Ajusta la profundidad total (en cm) desde el sensor al fondo de cada bote vacío para garantizar el cálculo exacto del porcentaje de llenado.</p>
+          </div>
+
+          <form id="frmCalib" class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-emerald-400 mb-1">Altura Contenedor Orgánico (cm)</label>
+              <input type="number" id="depth1" step="0.5" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-sky-400 mb-1">Altura Contenedor Reciclable (cm)</label>
+              <input type="number" id="depth2" step="0.5" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-sky-500">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-amber-400 mb-1">Altura Contenedor Inorgánico (cm)</label>
+              <input type="number" id="depth3" step="0.5" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500">
+            </div>
+
+            <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-blue-600/20">
+              Guardar Calibración
+            </button>
+          </form>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- MODAL LOGIN PARTICLE API -->
+  <div id="loginModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-cardDark border border-borderDark rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">
+      <button id="btnCloseLogin" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        </div>
+        <div>
+          <h3 class="font-bold text-white text-base">Iniciar Sesión Particle</h3>
+          <p class="text-xs text-slate-400">Monitoreo directo en la nube</p>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <input id="email" type="email" placeholder="Correo de Particle" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" autocomplete="username">
+        <input id="pass" type="password" placeholder="Contraseña" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" autocomplete="current-password">
+        <input id="devId" type="text" placeholder="Device ID de Particle Photon" class="w-full bg-boxDark border border-borderDark rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500">
+        
+        <div id="otpBox" class="hidden">
+          <input id="otp" type="text" inputmode="numeric" placeholder="Código de verificación MFA / OTP" class="w-full bg-boxDark border border-amber-500/50 rounded-xl px-4 py-2.5 text-xs text-amber-200 focus:outline-none">
+        </div>
+
+        <button id="btnEntrar" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition">
+          Entrar a Particle
+        </button>
+        <button id="btnCerrarSesionModal" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-red-400 rounded-xl text-xs font-semibold hidden transition">
+          Cerrar Sesión Actual
+        </button>
+        <div id="msg" class="text-xs text-slate-400 text-center min-h-[1.5em]"></div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
