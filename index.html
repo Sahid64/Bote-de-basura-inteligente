@@ -1,9 +1,16 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-[#0b1220]">
+<html lang="es" class="h-full bg-bgDark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bote Inteligente - Panel de Monitoreo Pro</title>
+
+  <!-- Aplica el tema guardado antes de pintar la página (evita parpadeo) -->
+  <script>
+    try {
+      if (localStorage.getItem("bote_tema") === "light") document.documentElement.classList.add("light-theme");
+    } catch (e) {}
+  </script>
   
   <!-- Fonts & Tailwind CSS -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,10 +29,10 @@
       theme: {
         extend: {
           colors: {
-            bgDark: '#0b1220',
-            cardDark: '#121b2e',
-            borderDark: '#24314d',
-            boxDark: '#18233a',
+            bgDark: 'rgb(var(--bg-rgb) / <alpha-value>)',
+            cardDark: 'rgb(var(--card-rgb) / <alpha-value>)',
+            borderDark: 'rgb(var(--borde-rgb) / <alpha-value>)',
+            boxDark: 'rgb(var(--caja-rgb) / <alpha-value>)',
             organico: '#4ade80',
             reciclable: '#38bdf8',
             inorganico: '#f59e0b',
@@ -130,6 +137,13 @@
             <option value="60" class="bg-boxDark text-slate-200">Cada 60 min</option>
           </select>
         </div>
+
+        <button id="themeToggle" type="button" role="switch" aria-checked="false" aria-label="Cambiar a tema claro" title="Cambiar tema" class="theme-switch">
+          <span class="theme-switch-thumb">
+            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          </span>
+        </button>
 
         <button id="btnAct" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-md shadow-blue-600/20">
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>

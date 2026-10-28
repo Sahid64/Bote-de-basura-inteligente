@@ -4,10 +4,10 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b1220;
+  background: var(--bg);
 }
 ::-webkit-scrollbar-thumb {
-  background: #24314d;
+  background: var(--borde);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -15,13 +15,21 @@
 }
 
 :root {
-  --bg: #0b1220;
-  --card: #121b2e;
-  --borde: #24314d;
-  --caja: #18233a;
+  /* Canales RGB para que Tailwind pueda aplicar opacidad (bg-cardDark/50, etc.) */
+  --bg-rgb: 11 18 32;
+  --card-rgb: 18 27 46;
+  --borde-rgb: 36 49 77;
+  --caja-rgb: 24 35 58;
+
+  --bg: rgb(var(--bg-rgb));
+  --card: rgb(var(--card-rgb));
+  --borde: rgb(var(--borde-rgb));
+  --caja: rgb(var(--caja-rgb));
   --texto: #e6edf7;
   --suave: #8a9bb8;
   --pista: #1f2a44;
+  --tenue: #1e293b;
+  --tenue-hover: #334155;
   --organico: #4ade80;
   --reciclable: #38bdf8;
   --inorganico: #f59e0b;
@@ -74,8 +82,8 @@ body {
 
 /* Corrección de color para menús desplegables (select / option) */
 select option {
-  background-color: #18233a;
-  color: #e6edf7;
+  background-color: var(--caja);
+  color: var(--texto);
 }
 
 /* Ajustes para OpenStreetMap (Leaflet) */
@@ -97,7 +105,7 @@ select option {
 }
 
 .leaflet-container {
-  background-color: #121b2e !important;
+  background-color: var(--card) !important;
   font-family: 'Inter', sans-serif !important;
 }
 
@@ -109,4 +117,125 @@ select option {
 
 .leaflet-popup-tip {
   background: #ffffff !important;
+}
+
+/* ===================== TEMA CLARO ===================== */
+.light-theme {
+  --bg-rgb: 241 245 249;
+  --card-rgb: 255 255 255;
+  --borde-rgb: 217 225 236;
+  --caja-rgb: 246 248 251;
+
+  --texto: #0f172a;
+  --suave: #64748b;
+  --pista: #e2e8f0;
+  --tenue: #e2e8f0;
+  --tenue-hover: #cbd5e1;
+}
+
+/* Texto: el marcado usa utilidades pensadas para fondo oscuro */
+.light-theme .text-white,
+.light-theme .text-slate-100,
+.light-theme .text-slate-200 { color: #0f172a; }
+.light-theme .text-slate-300 { color: #334155; }
+.light-theme .text-slate-400 { color: #64748b; }
+.light-theme .text-slate-500 { color: #94a3b8; }
+.light-theme .hover\:text-white:hover,
+.light-theme .hover\:text-slate-100:hover { color: #0f172a; }
+
+/* Los botones de color sólido conservan el texto blanco */
+.light-theme [class~="bg-blue-600"].text-white,
+.light-theme [class~="bg-emerald-600"].text-white,
+.light-theme [class~="bg-gradient-to-tr"].text-white { color: #ffffff; }
+
+/* Colores de acento más oscuros para que contrasten sobre blanco */
+.light-theme .text-emerald-400 { color: #059669; }
+.light-theme .text-sky-400 { color: #0284c7; }
+.light-theme .text-amber-400 { color: #d97706; }
+.light-theme .text-blue-400 { color: #2563eb; }
+.light-theme .text-red-300 { color: #b91c1c; }
+
+/* Superficies grises */
+.light-theme .bg-slate-800,
+.light-theme .bg-slate-700 { background-color: var(--tenue); }
+.light-theme .bg-slate-800\/50 { background-color: rgb(226 232 240 / 0.6); }
+.light-theme .hover\:bg-slate-800\/50:hover { background-color: rgb(226 232 240 / 0.7); }
+.light-theme .hover\:bg-slate-700:hover,
+.light-theme .hover\:bg-slate-600:hover { background-color: var(--tenue-hover); }
+.light-theme .text-slate-800 { color: var(--pista); }
+.light-theme .border-slate-700 { border-color: var(--borde); }
+.light-theme .bg-slate-900\/95 {
+  background-color: rgb(255 255 255 / 0.96);
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.15);
+}
+.light-theme .bg-black\/70 { background-color: rgb(15 23 42 / 0.4); }
+
+/* ===================== SWITCH DE TEMA ===================== */
+.theme-switch {
+  position: relative;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--caja);
+  border: 1px solid var(--borde);
+  cursor: pointer;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+.theme-switch:hover { border-color: #3b82f6; }
+.theme-switch:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+.theme-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #334155;
+  color: #c7d2fe;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.35s ease, color 0.35s ease;
+}
+.light-theme .theme-switch-thumb {
+  transform: translateX(24px);
+  background: #fbbf24;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(217, 119, 6, 0.4);
+}
+.theme-icon {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  transition: opacity 0.3s ease, transform 0.35s ease;
+}
+.theme-icon-sun { opacity: 0; transform: rotate(-90deg) scale(0.6); }
+.light-theme .theme-icon-moon { opacity: 0; transform: rotate(90deg) scale(0.6); }
+.light-theme .theme-icon-sun { opacity: 1; transform: rotate(0) scale(1); }
+
+/* Transición suave de colores, activa solo mientras se cambia de tema
+   para no interferir con las animaciones propias del panel */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition: background-color 0.4s ease, border-color 0.4s ease, color 0.4s ease, fill 0.4s ease, stroke 0.4s ease, box-shadow 0.4s ease !important;
+}
+.theme-transition .theme-switch-thumb {
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.35s ease, color 0.35s ease !important;
+}
+.theme-transition .theme-icon {
+  transition: opacity 0.3s ease, transform 0.35s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-transition,
+  .theme-transition *,
+  .theme-switch-thumb,
+  .theme-icon { transition: none !important; }
 }
