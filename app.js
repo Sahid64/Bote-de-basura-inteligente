@@ -53,6 +53,7 @@ function saveLocalStorage() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  initThemeToggle();
   initUi();
   loadLocalStorage();
 
@@ -407,7 +408,7 @@ function renderAreaChart() {
   const pts = state.historial.filter(h => h.t >= cutoff);
 
   if (pts.length < 2) {
-    svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#8a9bb8" text-anchor="middle" font-size="12">Recopilando telemetría...</text>`;
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" style="fill:var(--suave)" text-anchor="middle" font-size="12">Recopilando telemetría...</text>`;
     return;
   }
 
@@ -440,8 +441,8 @@ function renderAreaChart() {
 
   [0, 25, 50, 75, 100].forEach(v => {
     const y = getY(v);
-    svgContent += `<line x1="${margin.left}" y1="${y}" x2="${W - margin.right}" y2="${y}" stroke="#1f2a44" stroke-dasharray="2 2"/>`;
-    svgContent += `<text x="${margin.left - 8}" y="${y + 4}" fill="#8a9bb8" font-size="10" text-anchor="end">${v}%</text>`;
+    svgContent += `<line x1="${margin.left}" y1="${y}" x2="${W - margin.right}" y2="${y}" style="stroke:var(--pista)" stroke-dasharray="2 2"/>`;
+    svgContent += `<text x="${margin.left - 8}" y="${y + 4}" style="fill:var(--suave)" font-size="10" text-anchor="end">${v}%</text>`;
   });
 
   CONFIG.compartimentos.forEach((c, idx) => {
@@ -531,7 +532,7 @@ function renderDonutChart(currentP) {
   document.getElementById("pctDonutInorg").textContent = `${currentP[2]}%`;
 
   if (sum === 0) {
-    svg.innerHTML = `<circle cx="50" cy="50" r="38" stroke="#1f2a44" stroke-width="12" fill="none"/>`;
+    svg.innerHTML = `<circle cx="50" cy="50" r="38" style="stroke:var(--pista)" stroke-width="12" fill="none"/>`;
     return;
   }
 
@@ -540,7 +541,7 @@ function renderDonutChart(currentP) {
   let offset = 0;
 
   const colors = ["#4ade80", "#38bdf8", "#f59e0b"];
-  let svgPaths = `<circle cx="50" cy="50" r="${r}" stroke="#1f2a44" stroke-width="12" fill="none"/>`;
+  let svgPaths = `<circle cx="50" cy="50" r="${r}" style="stroke:var(--pista)" stroke-width="12" fill="none"/>`;
 
   currentP.forEach((val, idx) => {
     const strokeDash = (val / 100) * (circ / 3);
@@ -1012,5 +1013,32 @@ function initLeafletMap() {
     setTimeout(() => {
       if (mapInstance) mapInstance.invalidateSize();
     }, 250);
+  });
+}
+
+// ================= TEMA CLARO / OSCURO =================
+function initThemeToggle() {
+  const root = document.documentElement;
+  const btn = document.getElementById("themeToggle");
+  if (!btn) return;
+
+  const syncSwitch = () => {
+    const claro = root.classList.contains("light-theme");
+    btn.setAttribute("aria-checked", String(claro));
+    btn.setAttribute("aria-label", claro ? "Cambiar a tema oscuro" : "Cambiar a tema claro");
+  };
+  syncSwitch();
+
+  let transitionTimer;
+  btn.addEventListener("click", () => {
+    root.classList.add("theme-transition");
+    const claro = root.classList.toggle("light-theme");
+    try {
+      localStorage.setItem("bote_tema", claro ? "light" : "dark");
+    } catch (e) {}
+    syncSwitch();
+
+    clearTimeout(transitionTimer);
+    transitionTimer = setTimeout(() => root.classList.remove("theme-transition"), 450);
   });
 }
