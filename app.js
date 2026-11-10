@@ -2,14 +2,51 @@ const CONFIG = {
   titulo: "Bote Inteligente",
   deviceIdDefault: "3f0036000947313037363132",
   caidaVaciado: 25,
-  puntosRitmo: 8,
   umbrales: { medio: 50, casiLleno: 70, lleno: 80 },
+  // Solo se usa si no hay ubicación guardada ni permiso de geolocalización
+  ubicacionBase: { lat: 19.4326, lng: -99.1332 },
+  // Base de recolección (inicio y fin de la ruta), relativa al Bote 1
+  base: { dLat: -0.0012, dLng: -0.0009 },
   compartimentos: [
-    { id: 1, nombre: "Orgánico", icono: "leaf", colorHex: "#4ade80", colorVar: "--organico", depth: 27 },
-    { id: 2, nombre: "Reciclable", icono: "recycle", colorHex: "#38bdf8", colorVar: "--reciclable", depth: 27 },
-    { id: 3, nombre: "Inorgánico", icono: "trash", colorHex: "#f59e0b", colorVar: "--inorganico", depth: 27 }
+    { id: 1, nombre: "Orgánico", icono: "leaf", colorHex: "#4ade80", colorVar: "--organico" },
+    { id: 2, nombre: "Reciclable", icono: "recycle", colorHex: "#38bdf8", colorVar: "--reciclable" },
+    { id: 3, nombre: "Inorgánico", icono: "trash", colorHex: "#f59e0b", colorVar: "--inorganico" }
+  ],
+  // Botes simulados: posición relativa al Bote 1 y nivel inicial [org, rec, inorg]
+  botesSim: [
+    { id: 2, nombre: "Bote 2 · Entrada",        dLat:  0.0022, dLng:  0.0016, nivel: [78, 52, 85] },
+    { id: 3, nombre: "Bote 3 · Cafetería",      dLat: -0.0015, dLng:  0.0030, nivel: [35, 60, 20] },
+    { id: 4, nombre: "Bote 4 · Biblioteca",     dLat:  0.0008, dLng: -0.0028, nivel: [88, 74, 66] },
+    { id: 5, nombre: "Bote 5 · Estacionamiento", dLat: -0.0030, dLng: -0.0012, nivel: [12, 25, 40] }
   ]
 };
+
+const CALIB_DEFAULT = { vacio: [27, 27, 27], lleno: [3, 3, 3] };
+
+const NAV_OFF = "nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all";
+const NAV_ON = "nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all bg-blue-600/15 text-blue-400 border border-blue-500/30";
+const TITULOS = {
+  map: "Mapa de Botes",
+  dashboard: "Dashboard",
+  history: "Historial y Eventos",
+  alerts: "Alertas y Reglas",
+  device: "Salud del Dispositivo",
+  calibration: "Calibración"
+};
+
+function leerJSON(k, def) {
+  try { const v = JSON.parse(localStorage.getItem(k)); return v ?? def; } catch (_) { return def; }
+}
+
+function calibInicial() {
+  const c = leerJSON("bote_calib", null);
+  if (c && Array.isArray(c.vacio) && Array.isArray(c.lleno) && c.vacio.length === 3 && c.lleno.length === 3) return c;
+  const viejo = leerJSON("bote_depths", null); // versión anterior: solo profundidad
+  return {
+    vacio: Array.isArray(viejo) && viejo.length === 3 ? viejo : [...CALIB_DEFAULT.vacio],
+    lleno: [...CALIB_DEFAULT.lleno]
+  };
+}
 
 let state = {
   demoMode: !sessionStorage.getItem("pt"),
@@ -21,10 +58,15 @@ let state = {
   selectedRangeHours: 12,
   pushEnabled: false,
   audioEnabled: false,
-  historial: [],
-  vaciados: [],
-  maxHoy: [0, 0, 0],
-  depths: JSON.parse(localStorage.getItem("bote_depths")) || [27, 27, 27]
+  activeId: 1,
+  botes: {},
+  ubicacion: leerJSON("bote_ubicacion", null), // ubicación guardada del Bote 1
+  ubicFuente: "predeterminada",
+  moviendo: false,
+  rutaVisible: true,
+  calib: calibInicial(),
+  sensorOk: [true, true, true],
+  conexion: { conectado: false, t: null }
 };
 
 const SVG_ICONS = {
@@ -37,47 +79,115 @@ function getIco(key) {
   return `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SVG_ICONS[key] || ''}</svg>`;
 }
 
-// Persistencia LocalStorage por dispositivo
-function getLSKey(k) { return `bote:${state.deviceId}:${k}`; }
-function loadLocalStorage() {
-  try {
-    state.historial = JSON.parse(localStorage.getItem(getLSKey("hist"))) || [];
-    state.vaciados = JSON.parse(localStorage.getItem(getLSKey("vac"))) || [];
-  } catch (_) { state.historial = []; state.vaciados = []; }
+// ===================== BOTES Y PERSISTENCIA =====================
+const botesLista = () => Object.values(state.botes);
+const boteActivo = () => state.botes[state.activeId];
+const ultimoDe = (b) => b.historial[b.historial.length - 1];
+const calibDe = (b) => (b.real ? state.calib : CALIB_DEFAULT);
+const $ = (id) => document.getElementById(id);
+
+function lsKey(b, k) { return b.real ? `bote:${state.deviceId}:${k}` : `bote:sim${b.id}:${k}`; }
+
+function cargarBote(b) {
+  const h = leerJSON(lsKey(b, "hist"), []);
+  const v = leerJSON(lsKey(b, "vac"), []);
+  b.historial = Array.isArray(h) ? h : [];
+  b.vaciados = (Array.isArray(v) ? v : []).sort((x, y) => y.t - x.t); // más reciente primero
 }
-function saveLocalStorage() {
+
+function guardarBote(b) {
   try {
-    localStorage.setItem(getLSKey("hist"), JSON.stringify(state.historial.slice(-500)));
-    localStorage.setItem(getLSKey("vac"), JSON.stringify(state.vaciados.slice(-50)));
+    localStorage.setItem(lsKey(b, "hist"), JSON.stringify(b.historial.slice(-500)));
+    localStorage.setItem(lsKey(b, "vac"), JSON.stringify(b.vaciados.slice(0, 50)));
   } catch (_) {}
 }
 
+function cmDesdePct(pct, vacio, lleno) {
+  return parseFloat((vacio - (pct / 100) * (vacio - lleno)).toFixed(1));
+}
+
+function pctDesdeCm(cm, i, cal = state.calib) {
+  const pct = ((cal.vacio[i] - cm) / (cal.vacio[i] - cal.lleno[i])) * 100;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function generarHistorial(b, objetivo) {
+  const cal = calibDe(b), ahora = Date.now(), n = 25;
+  const nivel = objetivo.map(v => Math.max(3, v - 30));
+  b.historial = [];
+  for (let i = n; i >= 0; i--) {
+    const t = ahora - i * 30 * 60 * 1000;
+    const p = nivel.map((v, k) => {
+      nivel[k] = Math.min(98, Math.max(2, v + (objetivo[k] - v) / (i + 1) + (Math.random() * 2 - 1)));
+      return Math.round(nivel[k]);
+    });
+    const c = p.map((v, k) => cmDesdePct(v, cal.vacio[k], cal.lleno[k]));
+    b.historial.push({ t, p, c, sim: 1 });
+  }
+}
+
+function initBotes() {
+  state.botes[1] = { id: 1, nombre: "Bote 1 · Photon", real: true, historial: [], vaciados: [] };
+  CONFIG.botesSim.forEach(s => { state.botes[s.id] = { ...s, real: false, historial: [], vaciados: [] }; });
+
+  botesLista().forEach(b => {
+    cargarBote(b);
+    if (b.historial.length === 0) generarHistorial(b, b.real ? [55, 40, 30] : b.nivel);
+    if (!b.real && b.vaciados.length === 0) {
+      b.vaciados.push({ t: Date.now() - (5 + b.id) * 3600e3, compId: (b.id % 3) + 1, pre: 88, post: 7, sim: 1 });
+    }
+    guardarBote(b);
+  });
+}
+
+function registrarVaciado(b, compId, pre, post, t, sim) {
+  b.vaciados.unshift({ t, compId, pre, post, ...(sim ? { sim: 1 } : {}) });
+  if (b.vaciados.length > 50) b.vaciados.pop();
+  if (state.audioEnabled && b.id === state.activeId) playTone(523.25, 0.15);
+}
+
+function tickBoteSimulado(b) {
+  const cal = calibDe(b);
+  const ult = ultimoDe(b) || { p: [20, 20, 20] };
+  const t = Date.now();
+  const paso = [4, 5, 3];
+  const p = ult.p.map((v, i) => {
+    let n = Math.min(100, Math.max(0, v + Math.floor(Math.random() * paso[i] - 1)));
+    if (n >= 97) {
+      const post = 5 + Math.floor(Math.random() * 6);
+      registrarVaciado(b, i + 1, n, post, t, true);
+      n = post;
+    }
+    return n;
+  });
+  const c = p.map((v, i) => cmDesdePct(v, cal.vacio[i], cal.lleno[i]));
+  b.historial.push({ t, p, c, sim: 1 });
+  if (b.historial.length > 500) b.historial.shift();
+  guardarBote(b);
+}
+
+// ===================== INICIO =====================
 window.addEventListener("DOMContentLoaded", () => {
   initThemeToggle();
+  initBotes();
   initUi();
-  loadLocalStorage();
-
-  if (state.historial.length === 0) {
-    initDemoData();
-  }
-
   updateModeStatus();
-  renderAll();
   setupEventListeners();
+  irA("map");
+  initMapa();
+  resolverUbicacion();
+  renderAll();
 
   if (!state.demoMode) {
     fetchHardwareInterval();
+    leerCalibDePhoton();
+    fetchTelemetry();
   }
-
   state.timer = setInterval(fetchTelemetry, 15000);
 });
 
 function initUi() {
-  document.getElementById("depth1").value = state.depths[0];
-  document.getElementById("depth2").value = state.depths[1];
-  document.getElementById("depth3").value = state.depths[2];
-
-  const gridCards = document.getElementById("gridCards");
+  const gridCards = $("gridCards");
   gridCards.innerHTML = "";
 
   CONFIG.compartimentos.forEach((c) => {
@@ -104,14 +214,10 @@ function initUi() {
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-2 pt-3 border-t border-borderDark/60 text-center">
+        <div class="grid grid-cols-2 gap-2 pt-3 border-t border-borderDark/60 text-center">
           <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
             <div class="text-[10px] text-slate-400 font-medium">Distancia</div>
             <div id="cm-${c.id}" class="text-xs font-bold text-white mt-0.5">-- cm</div>
-          </div>
-          <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
-            <div class="text-[10px] text-slate-400 font-medium">Se llena en</div>
-            <div id="est-${c.id}" class="text-xs font-bold text-emerald-400 mt-0.5">--</div>
           </div>
           <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
             <div class="text-[10px] text-slate-400 font-medium">Últ. Vaciado</div>
@@ -122,159 +228,91 @@ function initUi() {
     `);
   });
 
-  const devSensorCards = document.getElementById("devSensorCards");
-  devSensorCards.innerHTML = CONFIG.compartimentos.map(c => `
+  construirFormCalib();
+  renderSaludSensores();
+}
+
+function renderSaludSensores() {
+  const cont = $("devSensorCards");
+  if (!cont) return;
+  cont.innerHTML = CONFIG.compartimentos.map((c, i) => {
+    const ok = state.demoMode || state.sensorOk[i];
+    return `
     <div class="bg-boxDark p-4 rounded-xl border border-borderDark space-y-2">
       <div class="flex items-center justify-between text-xs font-bold text-white">
         <span>Sensor ${c.nombre} (HC-SR04)</span>
-        <span class="text-emerald-400">OK</span>
+        <span class="${ok ? "text-emerald-400" : "text-red-400"}">${ok ? "OK" : "Sin eco"}</span>
       </div>
-      <p class="text-[11px] text-slate-400">Eco ultrasónico: <span class="text-slate-200 font-medium">Estable</span></p>
-      <p class="text-[11px] text-slate-400">Profundidad Máx: <span class="text-slate-200 font-medium" id="lblDepthDev-${c.id}">${state.depths[c.id-1]} cm</span></p>
-    </div>
-  `).join('');
-}
-
-function initDemoData() {
-  const now = Date.now();
-  const points = 25;
-  state.historial = [];
-
-  let levelOrg = 20, levelRec = 35, levelInorg = 15;
-
-  for (let i = points; i >= 0; i--) {
-    const t = now - i * (30 * 60 * 1000);
-
-    levelOrg = Math.min(95, Math.max(5, levelOrg + (Math.random() * 8 - 2)));
-    levelRec = Math.min(95, Math.max(5, levelRec + (Math.random() * 6 - 1.5)));
-    levelInorg = Math.min(95, Math.max(5, levelInorg + (Math.random() * 5 - 1)));
-
-    if (levelOrg > 85) {
-      state.vaciados.push({ t, compId: 1, pre: Math.round(levelOrg), post: 10 });
-      levelOrg = 10;
-    }
-
-    const p = [Math.round(levelOrg), Math.round(levelRec), Math.round(levelInorg)];
-    const c = p.map((val, idx) => parseFloat((state.depths[idx] * (1 - val / 100)).toFixed(1)));
-
-    state.historial.push({ t, p, c });
-  }
-  saveLocalStorage();
-}
-
-// PREDICCIÓN CON REGRESIÓN LINEAL
-function duracionTxt(ms) {
-  const min = Math.round(ms / 60000);
-  if (min < 1) return "< 1 min";
-  if (min < 60) return `~${min} min`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `~${h} h`;
-  const d = Math.round(h / 24);
-  return d > 30 ? "> 30 d" : `~${d} d`;
-}
-
-function estimarTiempoLlenado(compIndex, pctActual) {
-  if (pctActual >= CONFIG.umbrales.lleno) return "¡Lleno!";
-  const lastVacTime = state.vaciados.filter(v => v.compId === compIndex + 1).slice(-1)[0]?.t || 0;
-  const pts = state.historial.filter(h => h.t > lastVacTime && h.p[compIndex] != null).slice(-CONFIG.puntosRitmo);
-
-  if (pts.length < 2 || pts[pts.length - 1].t - pts[0].t < 60000) return "Estimando...";
-
-  const n = pts.length;
-  const mx = pts.reduce((s, h) => s + h.t, 0) / n;
-  const my = pts.reduce((s, h) => s + h.p[compIndex], 0) / n;
-
-  let num = 0, den = 0;
-  pts.forEach(h => {
-    num += (h.t - mx) * (h.p[compIndex] - my);
-    den += (h.t - mx) ** 2;
-  });
-
-  const pendiente = num / den; // Incremento en % por milisegundo
-  if (!(pendiente > 0)) return "Estable";
-
-  const msRestantes = (CONFIG.umbrales.lleno - pctActual) / pendiente;
-  return duracionTxt(msRestantes);
+      <p class="text-[11px] text-slate-400">Eco ultrasónico: <span class="text-slate-200 font-medium">${ok ? "Estable" : "Sin respuesta"}</span></p>
+      <p class="text-[11px] text-slate-400">Vacío / Lleno: <span class="text-slate-200 font-medium">${state.calib.vacio[i]} / ${state.calib.lleno[i]} cm</span></p>
+    </div>`;
+  }).join("");
 }
 
 function tiempoRelativoVaciado(compId) {
-  const v = state.vaciados.filter(item => item.compId === compId).slice(-1)[0];
+  const v = boteActivo().vaciados.find(item => item.compId === compId); // la lista está ordenada del más reciente al más antiguo
   if (!v) return "--";
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
   if (v.t >= hoy.getTime()) return new Date(v.t).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
   const dias = Math.ceil((hoy.getTime() - v.t) / 864e5);
   return `Hace ${dias}d`;
 }
 
-// TELEMETRÍA API PARTICLE & DEMO
+// ===================== TELEMETRÍA =====================
 async function fetchTelemetry() {
+  // Los botes simulados avanzan siempre
+  botesLista().forEach(b => { if (!b.real) tickBoteSimulado(b); });
+
   if (state.demoMode) {
-    const last = state.historial[state.historial.length - 1] || { p: [20, 20, 20] };
-    const t = Date.now();
+    tickBoteSimulado(state.botes[1]);
+    actualizarVistas();
+    return;
+  }
 
-    let newOrg = Math.min(100, Math.max(0, last.p[0] + Math.floor(Math.random() * 4 - 1)));
-    let newRec = Math.min(100, Math.max(0, last.p[1] + Math.floor(Math.random() * 5 - 1)));
-    let newInorg = Math.min(100, Math.max(0, last.p[2] + Math.floor(Math.random() * 3 - 1)));
+  if (!state.token || state.token.trim() === "") {
+    $("aviso").hidden = false;
+    $("avisoTxt").textContent = "Inicia sesión en Particle Cloud para ver las lecturas en vivo.";
+    actualizarVistas();
+    return;
+  }
 
-    [newOrg, newRec, newInorg].forEach((val, idx) => {
-      if (last.p[idx] - val >= CONFIG.caidaVaciado) {
-        triggerVaciadoDetected(idx + 1, last.p[idx], val, t);
-      }
+  try {
+    if (!state.baseApi || !state.baseApi.startsWith("https://api.particle.io")) {
+      state.baseApi = `https://api.particle.io/v1/devices/${state.deviceId || CONFIG.deviceIdDefault}`;
+    }
+
+    const r = await fetch(`${state.baseApi}/datos`, {
+      headers: { "Authorization": "Bearer " + state.token }
     });
+    const texto = await r.text();
 
-    const p = [newOrg, newRec, newInorg];
-    const c = p.map((val, idx) => parseFloat((state.depths[idx] * (1 - val / 100)).toFixed(1)));
-
-    state.historial.push({ t, p, c });
-    if (state.historial.length > 500) state.historial.shift();
-    saveLocalStorage();
-
-    renderAll();
-  } else {
-    // VALIDACIÓN: Evita hacer peticiones con Token vacío
-    if (!state.token || state.token.trim() === "") {
-      document.getElementById("aviso").hidden = false;
-      document.getElementById("avisoTxt").textContent = "Inicia sesión en Particle Cloud para ver las lecturas en vivo.";
-      return;
+    if (texto.trim().startsWith("<")) {
+      throw new Error("Respuesta HTML recibida de Particle Cloud. Revisa la conectividad del dispositivo.");
     }
 
-    try {
-      if (!state.baseApi || !state.baseApi.startsWith("https://api.particle.io")) {
-        state.baseApi = `https://api.particle.io/v1/devices/${state.deviceId || CONFIG.deviceIdDefault}`;
-      }
-
-      const r = await fetch(`${state.baseApi}/datos`, {
-        headers: { "Authorization": "Bearer " + state.token }
-      });
-      
-      const texto = await r.text();
-
-      if (texto.trim().startsWith("<")) {
-        throw new Error("Respuesta HTML recibida de Particle Cloud. Revisa la conectividad del dispositivo.");
-      }
-
-      const j = JSON.parse(texto);
-      if (j.error === "invalid_token" || j.error === "invalid_request") {
-        state.token = "";
-        sessionStorage.removeItem("pt");
-        updateModeStatus();
-        throw new Error("Sesión de Particle expirada. Vuelve a iniciar sesión.");
-      }
-      if (j.error) throw new Error(j.error_description || j.error);
-
-      const d = typeof j.result === "string" ? JSON.parse(j.result) : j.result;
-      
-      processParticleData(d, j.coreInfo);
-      document.getElementById("aviso").hidden = true;
-    } catch (err) {
-      document.getElementById("aviso").hidden = false;
-      document.getElementById("avisoTxt").textContent = "Error Particle API: " + err.message;
+    const j = JSON.parse(texto);
+    if (j.error === "invalid_token" || j.error === "invalid_request") {
+      state.token = "";
+      sessionStorage.removeItem("pt");
+      updateModeStatus();
+      throw new Error("Sesión de Particle expirada. Vuelve a iniciar sesión.");
     }
+    if (j.error) throw new Error(j.error_description || j.error);
+
+    const d = typeof j.result === "string" ? JSON.parse(j.result) : j.result;
+    processParticleData(d, j.coreInfo);
+    $("aviso").hidden = true;
+  } catch (err) {
+    state.conexion.conectado = false;
+    $("aviso").hidden = false;
+    $("avisoTxt").textContent = "Error Particle API: " + err.message;
+  } finally {
+    actualizarVistas();
   }
 }
 
 async function llamarParticleFunc(fn, arg) {
-  if (state.demoMode) return { result: 1 };
+  if (state.demoMode) return { return_value: 1 };
   const r = await fetch(`${state.baseApi}/${fn}`, {
     method: "POST",
     headers: {
@@ -293,71 +331,83 @@ async function fetchHardwareInterval() {
       headers: { "Authorization": "Bearer " + state.token }
     });
     const j = await r.json();
-    if (j.result !== undefined) {
-      document.getElementById("selMin").value = j.result;
-    }
+    if (j.result !== undefined) $("selMin").value = j.result;
   } catch (_) {}
 }
 
-function triggerVaciadoDetected(compId, preVal, postVal, timestamp) {
-  state.vaciados.unshift({ t: timestamp, compId, pre: preVal, post: postVal });
-  if (state.vaciados.length > 50) state.vaciados.pop();
-  saveLocalStorage();
-
-  renderVaciadosTable();
-  if (state.audioEnabled) playTone(523.25, 0.15);
+// Lee la calibración que realmente tiene la Photon (variable "calib": "v1,l1;v2,l2;v3,l3")
+async function leerCalibDePhoton() {
+  if (state.demoMode || !state.token) return;
+  try {
+    const r = await fetch(`${state.baseApi}/calib`, {
+      headers: { "Authorization": "Bearer " + state.token }
+    });
+    const j = await r.json();
+    if (typeof j.result !== "string") return;
+    const partes = j.result.split(";").map(s => s.split(",").map(Number));
+    if (partes.length !== 3 || partes.some(p => p.length !== 2 || p.some(isNaN))) return;
+    state.calib = { vacio: partes.map(p => p[0]), lleno: partes.map(p => p[1]) };
+    localStorage.setItem("bote_calib", JSON.stringify(state.calib));
+    cargarFormCalib();
+    renderSaludSensores();
+  } catch (_) {}
 }
 
 function processParticleData(d, coreInfo) {
+  const b = state.botes[1];
   const t = d.t ? d.t * 1000 : Date.now();
-  
-  const c = [d.c1 || 0, d.c2 || 0, d.c3 || 0];
-  let p = [];
 
-  if (d.p1 !== undefined && d.p2 !== undefined && d.p3 !== undefined) {
-    p = [d.p1, d.p2, d.p3];
-  } else {
-    p = c.map((dist, i) => {
-      if (dist < 0) return 0;
-      const pct = ((state.depths[i] - dist) / (state.depths[i] - 3.0)) * 100;
-      return Math.max(0, Math.min(100, Math.round(pct)));
-    });
+  state.conexion = { conectado: true, t }; // si la lectura llegó, la Photon está en línea
+
+  // Al llegar datos reales se descartan los de demostración
+  if (b.historial.some(h => h.sim)) {
+    b.historial = b.historial.filter(h => !h.sim);
+    b.vaciados = b.vaciados.filter(v => !v.sim);
+  }
+  const ultimo = ultimoDe(b);
+
+  const p = [], c = [];
+  for (let i = 0; i < 3; i++) {
+    const dist = Number(d["c" + (i + 1)]);
+    let pct = d["p" + (i + 1)];
+    const ok = dist > 0; // -1 = el sensor no recibió eco
+    if (ok && !(typeof pct === "number" && pct >= 0)) pct = pctDesdeCm(dist, i);
+    state.sensorOk[i] = ok;
+    c.push(ok ? dist : (ultimo ? ultimo.c[i] : 0));
+    p.push(ok ? pct : (ultimo ? ultimo.p[i] : 0));
   }
 
-  const last = state.historial[state.historial.length - 1];
-  if (last) {
+  renderSaludSensores();
+  if (!state.sensorOk.some(Boolean)) return; // ningún sensor midió: no se grafica nada
+
+  // Misma lectura que la anterior (la Photon solo actualiza cada X min): no se duplica
+  if (ultimo && ultimo.t === t) return;
+
+  if (ultimo) {
     p.forEach((val, idx) => {
-      if (last.p[idx] - val >= CONFIG.caidaVaciado) {
-        triggerVaciadoDetected(idx + 1, last.p[idx], val, t);
+      if (ultimo.p[idx] - val >= CONFIG.caidaVaciado) {
+        registrarVaciado(b, idx + 1, ultimo.p[idx], val, t, false);
       }
     });
   }
 
-  state.historial.push({ t, p, c });
-  if (state.historial.length > 500) state.historial.shift();
-  saveLocalStorage();
-
-  const isConnected = coreInfo && coreInfo.connected;
-  const statusBadge = document.getElementById("statusBadge");
-  const horaStr = new Date(t).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-
-  if (isConnected) {
-    statusBadge.textContent = `Photon en línea · Última: ${horaStr}`;
-    statusBadge.className = "text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-  } else {
-    statusBadge.textContent = `Photon sin conexión · Última: ${horaStr}`;
-    statusBadge.className = "text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20";
-  }
+  b.historial.push({ t, p, c });
+  if (b.historial.length > 500) b.historial.shift();
+  guardarBote(b);
 
   p.forEach((pct, idx) => {
     if (pct >= CONFIG.umbrales.lleno && state.pushEnabled) {
       sendPushNotification(`Contenedor ${CONFIG.compartimentos[idx].nombre} Lleno`, `El contenedor alcanzó un ${pct}% de su capacidad.`);
     }
   });
-
-  renderAll();
 }
 
+function actualizarVistas() {
+  renderAll();
+  renderMapaBotes();
+}
+
+// ===================== RENDER DASHBOARD =====================
 function getStatusBadge(pct) {
   if (pct >= CONFIG.umbrales.lleno) return { txt: "¡Lleno!", cls: "badge-lleno" };
   if (pct >= CONFIG.umbrales.casiLleno) return { txt: "Casi Lleno", cls: "badge-casi-lleno" };
@@ -365,25 +415,52 @@ function getStatusBadge(pct) {
   return { txt: "Normal", cls: "badge-normal" };
 }
 
+function renderEstado() {
+  const el = $("statusBadge");
+  if (!el) return;
+  const b = boteActivo();
+  const base = "text-[11px] font-bold px-2.5 py-1 rounded-full border ";
+
+  if (!b.real || state.demoMode) {
+    el.textContent = "Datos simulados";
+    el.className = base + "bg-sky-500/10 text-sky-400 border-sky-500/20";
+    return;
+  }
+  if (!state.conexion.t) {
+    el.textContent = "Esperando datos de la Photon...";
+    el.className = base + "bg-slate-500/10 text-slate-400 border-slate-500/20";
+    return;
+  }
+  const hora = new Date(state.conexion.t).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  if (state.conexion.conectado) {
+    el.textContent = `Photon en línea · Última: ${hora}`;
+    el.className = base + "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+  } else {
+    el.textContent = `Photon sin conexión · Última: ${hora}`;
+    el.className = base + "bg-amber-500/10 text-amber-400 border-amber-500/20";
+  }
+}
+
 function renderAll() {
-  const current = state.historial[state.historial.length - 1];
+  const b = boteActivo();
+  const current = ultimoDe(b);
   if (!current) return;
 
+  renderEstado();
+  const titulo = $("boteTitulo");
+  if (titulo) titulo.textContent = b.nombre;
+
+  const conSensor = b.real && !state.demoMode;
   CONFIG.compartimentos.forEach((c, i) => {
     const pct = current.p[i];
-    const cm = current.c[i];
     const status = getStatusBadge(pct);
 
-    const ring = document.getElementById(`ring-${c.id}`);
-    const strokeDash = (pct / 100) * 490;
-    ring.style.strokeDasharray = `${strokeDash} 490`;
+    $(`ring-${c.id}`).style.strokeDasharray = `${(pct / 100) * 490} 490`;
+    $(`pct-${c.id}`).textContent = `${pct}%`;
+    $(`cm-${c.id}`).textContent = (conSensor && !state.sensorOk[i]) ? "Sin eco" : `${current.c[i]} cm`;
+    $(`vac-${c.id}`).textContent = tiempoRelativoVaciado(c.id);
 
-    document.getElementById(`pct-${c.id}`).textContent = `${pct}%`;
-    document.getElementById(`cm-${c.id}`).textContent = `${cm} cm`;
-    document.getElementById(`est-${c.id}`).textContent = estimarTiempoLlenado(i, pct);
-    document.getElementById(`vac-${c.id}`).textContent = tiempoRelativoVaciado(c.id);
-
-    const badge = document.getElementById(`badge-${c.id}`);
+    const badge = $(`badge-${c.id}`);
     badge.textContent = status.txt;
     badge.className = `px-2.5 py-1 rounded-full text-[11px] font-bold ${status.cls}`;
   });
@@ -392,20 +469,20 @@ function renderAll() {
   renderDonutChart(current.p);
   renderVaciadosTable();
   renderHistoryTable();
+  renderLecturasCalib();
 }
 
 function renderAreaChart() {
-  const svg = document.getElementById("chartSvg");
-  const wrapper = document.getElementById("graficaWrapper");
+  const svg = $("chartSvg");
+  const wrapper = $("graficaWrapper");
   if (!wrapper || !svg) return;
   const W = wrapper.clientWidth || 600;
   const H = wrapper.clientHeight || 240;
 
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
 
-  const now = Date.now();
-  const cutoff = now - state.selectedRangeHours * 3600 * 1000;
-  const pts = state.historial.filter(h => h.t >= cutoff);
+  const cutoff = Date.now() - state.selectedRangeHours * 3600 * 1000;
+  const pts = boteActivo().historial.filter(h => h.t >= cutoff);
 
   if (pts.length < 2) {
     svg.innerHTML = `<text x="${W/2}" y="${H/2}" style="fill:var(--suave)" text-anchor="middle" font-size="12">Recopilando telemetría...</text>`;
@@ -452,7 +529,6 @@ function renderAreaChart() {
     pts.forEach((h, i) => {
       const x = getX(h.t);
       const y = getY(h.p[idx]);
-
       if (i === 0) {
         pathD += `M ${x} ${y}`;
         areaD += `M ${x} ${margin.top + innerH} L ${x} ${y}`;
@@ -475,19 +551,17 @@ function renderAreaChart() {
   wrapper.onmousemove = (e) => {
     const rect = wrapper.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
-
     if (mouseX < margin.left || mouseX > W - margin.right) return;
 
     const hoverT = minT + ((mouseX - margin.left) / innerW) * (maxT - minT);
     let closest = pts[0];
     let minDiff = Math.abs(pts[0].t - hoverT);
-
     pts.forEach(p => {
       const diff = Math.abs(p.t - hoverT);
       if (diff < minDiff) { minDiff = diff; closest = p; }
     });
 
-    const hoverLine = document.getElementById("hoverLine");
+    const hoverLine = $("hoverLine");
     if (hoverLine) {
       const cx = getX(closest.t);
       hoverLine.setAttribute("x1", cx);
@@ -495,17 +569,15 @@ function renderAreaChart() {
       hoverLine.classList.remove("hidden");
     }
 
-    const tooltip = document.getElementById("chartTooltip");
+    const tooltip = $("chartTooltip");
     if (tooltip) {
       const timeStr = new Date(closest.t).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      
       tooltip.innerHTML = `
         <div class="font-bold text-white mb-1 border-b border-slate-700 pb-1">${timeStr}</div>
-        <div class="flex items-center justify-between gap-4 text-emerald-400"><span>Orgánico:</span><b>${closest.p[0]}%</b></div>
-        <div class="flex items-center justify-between gap-4 text-sky-400"><span>Reciclable:</span><b>${closest.p[1]}%</b></div>
-        <div class="flex items-center justify-between gap-4 text-amber-400"><span>Inorgánico:</span><b>${closest.p[2]}%</b></div>
+        <div class="flex items-center justify-between gap-4 text-emerald-400"><span>Orgánico:</span><b>${closest.p[0]}% · ${closest.c[0]} cm</b></div>
+        <div class="flex items-center justify-between gap-4 text-sky-400"><span>Reciclable:</span><b>${closest.p[1]}% · ${closest.c[1]} cm</b></div>
+        <div class="flex items-center justify-between gap-4 text-amber-400"><span>Inorgánico:</span><b>${closest.p[2]}% · ${closest.c[2]} cm</b></div>
       `;
-
       tooltip.style.left = `${getX(closest.t)}px`;
       tooltip.style.top = `${getY(Math.max(...closest.p)) - 10}px`;
       tooltip.classList.remove("hidden");
@@ -513,23 +585,23 @@ function renderAreaChart() {
   };
 
   wrapper.onmouseleave = () => {
-    const hoverLine = document.getElementById("hoverLine");
+    const hoverLine = $("hoverLine");
     if (hoverLine) hoverLine.classList.add("hidden");
-    const tooltip = document.getElementById("chartTooltip");
+    const tooltip = $("chartTooltip");
     if (tooltip) tooltip.classList.add("hidden");
   };
 }
 
 function renderDonutChart(currentP) {
-  const svg = document.getElementById("donutSvg");
+  const svg = $("donutSvg");
   if (!svg) return;
   const sum = currentP.reduce((a, b) => a + b, 0);
   const avg = Math.round(sum / 3);
 
-  document.getElementById("donutTotalVol").textContent = `${avg}%`;
-  document.getElementById("pctDonutOrg").textContent = `${currentP[0]}%`;
-  document.getElementById("pctDonutRec").textContent = `${currentP[1]}%`;
-  document.getElementById("pctDonutInorg").textContent = `${currentP[2]}%`;
+  $("donutTotalVol").textContent = `${avg}%`;
+  $("pctDonutOrg").textContent = `${currentP[0]}%`;
+  $("pctDonutRec").textContent = `${currentP[1]}%`;
+  $("pctDonutInorg").textContent = `${currentP[2]}%`;
 
   if (sum === 0) {
     svg.innerHTML = `<circle cx="50" cy="50" r="38" style="stroke:var(--pista)" stroke-width="12" fill="none"/>`;
@@ -539,16 +611,15 @@ function renderDonutChart(currentP) {
   const r = 38;
   const circ = 2 * Math.PI * r;
   let offset = 0;
-
   const colors = ["#4ade80", "#38bdf8", "#f59e0b"];
   let svgPaths = `<circle cx="50" cy="50" r="${r}" style="stroke:var(--pista)" stroke-width="12" fill="none"/>`;
 
   currentP.forEach((val, idx) => {
     const strokeDash = (val / 100) * (circ / 3);
     svgPaths += `
-      <circle cx="50" cy="50" r="${r}" 
-        stroke="${colors[idx]}" 
-        stroke-width="12" 
+      <circle cx="50" cy="50" r="${r}"
+        stroke="${colors[idx]}"
+        stroke-width="12"
         fill="none"
         stroke-dasharray="${strokeDash} ${circ}"
         stroke-dashoffset="${-offset}"
@@ -562,14 +633,15 @@ function renderDonutChart(currentP) {
 }
 
 function renderVaciadosTable() {
-  const tbody = document.getElementById("tbVaciadosDash");
+  const tbody = $("tbVaciadosDash");
   if (!tbody) return;
-  if (state.vaciados.length === 0) {
+  const vaciados = boteActivo().vaciados;
+  if (vaciados.length === 0) {
     tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-500">No se han registrado eventos de vaciado recientemente.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = state.vaciados.slice(0, 5).map(v => {
+  tbody.innerHTML = vaciados.slice(0, 5).map(v => {
     const comp = CONFIG.compartimentos.find(c => c.id === v.compId);
     const timeStr = new Date(v.t).toLocaleString("es-MX", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" });
     return `
@@ -585,18 +657,17 @@ function renderVaciadosTable() {
 }
 
 function renderHistoryTable() {
-  const tbody = document.getElementById("tbHistorialFull");
+  const tbody = $("tbHistorialFull");
   if (!tbody) return;
-  const searchInput = document.getElementById("searchHistory");
+  const searchInput = $("searchHistory");
   const search = searchInput ? searchInput.value.toLowerCase() : "";
 
-  let filtered = [...state.historial].reverse();
-
+  let filtered = [...boteActivo().historial].reverse();
   if (search) {
     filtered = filtered.filter(h => new Date(h.t).toLocaleString("es-MX").toLowerCase().includes(search));
   }
 
-  const lblTotal = document.getElementById("lblTotalRegs");
+  const lblTotal = $("lblTotalRegs");
   if (lblTotal) lblTotal.textContent = filtered.length;
 
   tbody.innerHTML = filtered.slice(0, 50).map(h => {
@@ -637,8 +708,9 @@ function sendPushNotification(title, body) {
 }
 
 function exportToCsv() {
+  const b = boteActivo();
   let csv = "Timestamp,Fecha_Hora,Organico_Pct,Reciclable_Pct,Inorganico_Pct,Dist_Org_cm,Dist_Rec_cm,Dist_Inorg_cm\n";
-  state.historial.forEach(h => {
+  b.historial.forEach(h => {
     const dateStr = `"${new Date(h.t).toLocaleString("es-MX")}"`;
     csv += `${h.t},${dateStr},${h.p[0]},${h.p[1]},${h.p[2]},${h.c[0]},${h.c[1]},${h.c[2]}\n`;
   });
@@ -647,16 +719,16 @@ function exportToCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `bote_inteligente_telemetria_${Date.now()}.csv`;
+  a.download = `bote_${b.id}_telemetria_${Date.now()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 function updateModeStatus() {
-  const dot = document.getElementById("modeDot");
-  const txt = document.getElementById("modeTxt");
-  const btnModal = document.getElementById("lblLoginBtnText");
-  const btnLogoutModal = document.getElementById("btnCerrarSesionModal");
+  const dot = $("modeDot");
+  const txt = $("modeTxt");
+  const btnModal = $("lblLoginBtnText");
+  const btnLogoutModal = $("btnCerrarSesionModal");
 
   if (state.demoMode) {
     if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
@@ -669,15 +741,341 @@ function updateModeStatus() {
     if (btnModal) btnModal.textContent = "Cuenta Particle Activa";
     if (btnLogoutModal) btnLogoutModal.classList.remove("hidden");
   }
+  renderSaludSensores();
 }
 
+// ===================== CALIBRACIÓN =====================
+function construirFormCalib() {
+  const cont = $("calibRows");
+  if (!cont) return;
+  cont.innerHTML = CONFIG.compartimentos.map((c, i) => `
+    <div class="bg-boxDark border border-borderDark rounded-xl p-4 space-y-3">
+      <div class="text-xs font-bold" style="color:${c.colorHex}">${c.nombre} · sensor ${c.id}</div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-400 mb-1">Bote vacío (cm)</label>
+          <div class="flex gap-2">
+            <input type="number" id="vacio${c.id}" step="0.1" class="w-full bg-cardDark border border-borderDark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+            <button type="button" data-tomar="vacio" data-i="${i}" class="px-3 rounded-lg text-[11px] font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 transition">Tomar</button>
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-400 mb-1">Bote lleno (cm)</label>
+          <div class="flex gap-2">
+            <input type="number" id="lleno${c.id}" step="0.1" class="w-full bg-cardDark border border-borderDark rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+            <button type="button" data-tomar="lleno" data-i="${i}" class="px-3 rounded-lg text-[11px] font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 transition">Tomar</button>
+          </div>
+        </div>
+      </div>
+      <div class="text-[11px] text-slate-400">Lectura actual del sensor: <span id="lecturaCalib${c.id}" class="font-bold text-slate-200">-- cm</span></div>
+    </div>
+  `).join("");
+
+  cont.querySelectorAll("[data-tomar]").forEach(btn => {
+    btn.onclick = () => {
+      const h = ultimoDe(state.botes[1]);
+      if (!h) return;
+      const i = parseInt(btn.dataset.i);
+      $(`${btn.dataset.tomar}${i + 1}`).value = h.c[i];
+    };
+  });
+  cargarFormCalib();
+}
+
+function cargarFormCalib() {
+  CONFIG.compartimentos.forEach((c, i) => {
+    const v = $(`vacio${c.id}`), l = $(`lleno${c.id}`);
+    if (v) v.value = state.calib.vacio[i];
+    if (l) l.value = state.calib.lleno[i];
+  });
+}
+
+function renderLecturasCalib() {
+  const h = ultimoDe(state.botes[1]);
+  CONFIG.compartimentos.forEach((c, i) => {
+    const el = $(`lecturaCalib${c.id}`);
+    if (el) el.textContent = h ? `${h.c[i]} cm` : "-- cm";
+  });
+}
+
+// ===================== NAVEGACIÓN =====================
+function irA(tabId) {
+  document.querySelectorAll(".nav-item").forEach(btn => {
+    btn.className = btn.dataset.tab === tabId ? NAV_ON : NAV_OFF;
+  });
+  document.querySelectorAll(".tab-pane").forEach(p => p.classList.add("hidden"));
+  const pane = $(`tab-${tabId}`);
+  if (pane) pane.classList.remove("hidden");
+
+  const b = boteActivo();
+  $("viewTitle").textContent = tabId === "map" ? TITULOS.map : `${TITULOS[tabId] || "Dashboard"} · ${b.nombre}`;
+  $("statusBadge").hidden = tabId === "map";
+
+  if (tabId === "map") {
+    renderMapaBotes();
+    if (mapa) setTimeout(() => mapa.invalidateSize(), 50);
+  } else {
+    renderAll();
+  }
+}
+
+function abrirDashboard(id) {
+  if (!state.botes[id]) return;
+  state.activeId = id;
+  irA("dashboard");
+}
+
+// ===================== MAPA, BOTES Y RUTAS =====================
+let mapa = null;
+let marcadores = {};
+let marcadorBase = null;
+let capaRuta = null;
+let rutaClave = "";
+let rutaSeq = 0;
+
+function posicionBote(b) {
+  const base = state.ubicacion || CONFIG.ubicacionBase;
+  if (b.real) return { lat: base.lat, lng: base.lng };
+  return { lat: base.lat + b.dLat, lng: base.lng + b.dLng };
+}
+
+function posicionBase() {
+  const base = state.ubicacion || CONFIG.ubicacionBase;
+  return { lat: base.lat + CONFIG.base.dLat, lng: base.lng + CONFIG.base.dLng };
+}
+
+function colorPorNivel(pct) {
+  if (pct >= CONFIG.umbrales.lleno) return "#ef4444";
+  if (pct >= CONFIG.umbrales.casiLleno) return "#f97316";
+  if (pct >= CONFIG.umbrales.medio) return "#f59e0b";
+  return "#4ade80";
+}
+
+// Resumen de un bote: el número del marcador es el compartimento más lleno
+function resumenBote(b) {
+  const h = ultimoDe(b);
+  const p = h ? h.p : [0, 0, 0];
+  const max = Math.max(...p);
+  return { p, max, estado: getStatusBadge(max), color: colorPorNivel(max) };
+}
+
+function resolverUbicacion() {
+  if (state.ubicacion) { state.ubicFuente = "guardada"; return; }
+  state.ubicFuente = "predeterminada";
+  if (!("geolocation" in navigator)) return;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      if (state.ubicacion) return;
+      state.ubicacion = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      state.ubicFuente = "navegador";
+      rutaClave = "";
+      renderMapaBotes();
+      ajustarVistaMapa();
+    },
+    () => {},
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  );
+}
+
+function guardarUbicacion(lat, lng) {
+  state.ubicacion = { lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) };
+  state.ubicFuente = "guardada";
+  try { localStorage.setItem("bote_ubicacion", JSON.stringify(state.ubicacion)); } catch (_) {}
+  rutaClave = "";
+  renderMapaBotes();
+  ajustarVistaMapa();
+}
+
+function initMapa() {
+  const cont = $("map");
+  if (!cont || mapa || typeof L === "undefined") return;
+  const centro = state.ubicacion || CONFIG.ubicacionBase;
+  mapa = L.map("map").setView([centro.lat, centro.lng], 16);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(mapa);
+
+  mapa.invalidateSize();
+  renderMapaBotes();
+  ajustarVistaMapa();
+  setTimeout(() => mapa.invalidateSize(), 250);
+}
+
+function ajustarVistaMapa() {
+  if (!mapa) return;
+  const pts = botesLista().map(posicionBote).concat([posicionBase()]);
+  mapa.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])), { padding: [50, 50], maxZoom: 17 });
+}
+
+function popupBote(b) {
+  const r = resumenBote(b);
+  const origen = b.real ? (state.demoMode ? "Photon (modo demo)" : "Photon · datos reales") : "Bote simulado";
+  const barras = CONFIG.compartimentos.map((c, i) => `
+    <div style="margin:5px 0">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#334155"><span>${c.nombre}</span><b>${r.p[i]}%</b></div>
+      <div style="height:6px;border-radius:4px;background:#e2e8f0;overflow:hidden"><div style="height:100%;width:${r.p[i]}%;background:${c.colorHex}"></div></div>
+    </div>`).join("");
+  return `
+    <div style="font-family:Inter,sans-serif;color:#0b1220;min-width:210px">
+      <b style="font-size:13px">${b.nombre}</b><br/>
+      <span style="font-size:11px;color:#64748b">${origen}</span>
+      ${barras}
+      <button onclick="abrirDashboard(${b.id})" style="margin-top:8px;width:100%;padding:7px;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;font-size:12px;border:0;cursor:pointer">Ver dashboard</button>
+    </div>`;
+}
+
+function renderListaBotes() {
+  const cont = $("listaBotes");
+  if (!cont) return;
+  cont.innerHTML = botesLista().map(b => {
+    const r = resumenBote(b);
+    const barras = CONFIG.compartimentos.map((c, i) => `
+      <div class="flex items-center gap-2 text-[11px]">
+        <span class="w-16 text-slate-400">${c.nombre}</span>
+        <div class="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden"><div class="h-full rounded-full" style="width:${r.p[i]}%;background:${c.colorHex}"></div></div>
+        <b class="w-9 text-right text-white">${r.p[i]}%</b>
+      </div>`).join("");
+    return `
+      <button type="button" onclick="abrirDashboard(${b.id})" class="w-full text-left bg-boxDark border border-borderDark hover:border-blue-500 rounded-xl p-3 space-y-2 transition">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-bold text-white">${b.nombre}</span>
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estado.cls}">${r.estado.txt}</span>
+        </div>
+        ${barras}
+        <div class="text-[10px] text-slate-500">Ver dashboard →</div>
+      </button>`;
+  }).join("");
+}
+
+function renderMapaBotes() {
+  renderListaBotes();
+
+  const info = $("ubicInfo");
+  if (info) {
+    const u = state.ubicacion || CONFIG.ubicacionBase;
+    info.textContent = `Bote 1: ${u.lat.toFixed(5)}, ${u.lng.toFixed(5)} (${state.ubicFuente}). Los botes 2 a 5 son simulados y se ubican a su alrededor.`;
+  }
+  if (!mapa) return;
+
+  botesLista().forEach(b => {
+    const pos = posicionBote(b);
+    const r = resumenBote(b);
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="bote-pin" style="--c:${r.color}">${r.max}%</div>`,
+      iconSize: [46, 46],
+      iconAnchor: [23, 23],
+      popupAnchor: [0, -26]
+    });
+
+    let m = marcadores[b.id];
+    if (!m) {
+      m = L.marker([pos.lat, pos.lng], { icon, draggable: false }).addTo(mapa);
+      m.bindPopup(() => popupBote(b), { minWidth: 220 });
+      if (b.real) {
+        m.on("dragend", () => {
+          const ll = m.getLatLng();
+          state.moviendo = false;
+          m.dragging.disable();
+          const btn = $("btnMoverBote");
+          if (btn) btn.textContent = "Ajustar posición del Bote 1";
+          guardarUbicacion(ll.lat, ll.lng);
+        });
+      }
+      marcadores[b.id] = m;
+    } else if (!(b.real && state.moviendo)) {
+      m.setLatLng([pos.lat, pos.lng]);
+      m.setIcon(icon);
+      if (m.isPopupOpen()) m.getPopup().update();
+    }
+  });
+
+  const pb = posicionBase();
+  if (!marcadorBase) {
+    marcadorBase = L.marker([pb.lat, pb.lng], {
+      icon: L.divIcon({ className: "", html: '<div class="base-pin">Base</div>', iconSize: [48, 24], iconAnchor: [24, 12] }),
+      interactive: false
+    }).addTo(mapa);
+  } else {
+    marcadorBase.setLatLng([pb.lat, pb.lng]);
+  }
+
+  actualizarRuta();
+}
+
+function distM(a, b) {
+  const R = 6371000, rad = x => (x * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Vecino más cercano partiendo de la base
+function ordenarRuta(botes) {
+  let actual = posicionBase();
+  const pend = [...botes];
+  const orden = [];
+  while (pend.length) {
+    let mejor = 0, dMin = Infinity;
+    pend.forEach((b, i) => {
+      const d = distM(actual, posicionBote(b));
+      if (d < dMin) { dMin = d; mejor = i; }
+    });
+    const [b] = pend.splice(mejor, 1);
+    orden.push(b);
+    actual = posicionBote(b);
+  }
+  return orden;
+}
+
+async function actualizarRuta() {
+  if (!mapa) return;
+  const info = $("rutaInfo");
+  const necesitan = botesLista().filter(b => resumenBote(b).max >= CONFIG.umbrales.casiLleno);
+  const orden = ordenarRuta(necesitan);
+  const u = state.ubicacion || CONFIG.ubicacionBase;
+  const clave = `${state.rutaVisible}|${orden.map(b => b.id).join(",")}|${u.lat.toFixed(5)},${u.lng.toFixed(5)}`;
+  if (clave === rutaClave) return; // nada cambió: no se vuelve a pedir la ruta
+  rutaClave = clave;
+
+  if (capaRuta) { mapa.removeLayer(capaRuta); capaRuta = null; }
+  if (!state.rutaVisible) { if (info) info.textContent = "Ruta oculta."; return; }
+  if (!orden.length) { if (info) info.textContent = "Ningún bote necesita recolección por ahora (se recolectan los de ≥ 70 %)."; return; }
+
+  const pts = [posicionBase(), ...orden.map(posicionBote), posicionBase()];
+  const mi = ++rutaSeq;
+  let coords = pts.map(p => [p.lat, p.lng]);
+  let extra = "";
+  let porCalles = false;
+
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${pts.map(p => `${p.lng},${p.lat}`).join(";")}?overview=full&geometries=geojson`;
+    const r = await fetch(url);
+    const j = await r.json();
+    if (j.code === "Ok" && j.routes && j.routes[0]) {
+      coords = j.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      extra = ` · ${(j.routes[0].distance / 1000).toFixed(1)} km · ${Math.round(j.routes[0].duration / 60)} min`;
+      porCalles = true;
+    }
+  } catch (_) {}
+
+  if (mi !== rutaSeq) return; // llegó una petición más reciente
+  capaRuta = L.polyline(coords, { color: "#3b82f6", weight: 5, opacity: 0.85, dashArray: porCalles ? null : "8 8" }).addTo(mapa);
+  if (info) {
+    info.textContent = `Ruta: Base → ${orden.map(b => b.nombre.split(" · ")[0]).join(" → ")} → Base${extra}${porCalles ? "" : " (línea recta: sin servicio de rutas)"}`;
+  }
+}
+
+// ===================== EVENTOS =====================
 function setupEventListeners() {
-  const btnGuardarUmbralesVac = document.getElementById("btnGuardarUmbralesVac");
+  const btnGuardarUmbralesVac = $("btnGuardarUmbralesVac");
   if (btnGuardarUmbralesVac) {
     btnGuardarUmbralesVac.onclick = async () => {
-      const pre = document.getElementById("inputPreVac").value;
-      const post = document.getElementById("inputPostVac").value;
-      const msg = document.getElementById("msgUmbralesVac");
+      const pre = $("inputPreVac").value;
+      const post = $("inputPostVac").value;
+      const msg = $("msgUmbralesVac");
 
       if (!pre || !post) {
         msg.textContent = "Ingresa ambos valores antes de guardar.";
@@ -690,7 +1088,6 @@ function setupEventListeners() {
         if (res.return_value === 1 || state.demoMode) {
           msg.textContent = `¡Umbrales actualizados! Se avisará cuando baje de ≥${pre}% a ≤${post}%.`;
           msg.className = "text-[11px] text-emerald-400 text-center";
-      
           localStorage.setItem("umbralPreVac", pre);
           localStorage.setItem("umbralPostVac", post);
         } else {
@@ -705,45 +1102,59 @@ function setupEventListeners() {
 
   const savedPre = localStorage.getItem("umbralPreVac") || "60";
   const savedPost = localStorage.getItem("umbralPostVac") || "10";
-  if (document.getElementById("inputPreVac")) document.getElementById("inputPreVac").value = savedPre;
-  if (document.getElementById("inputPostVac")) document.getElementById("inputPostVac").value = savedPost;
+  if ($("inputPreVac")) $("inputPreVac").value = savedPre;
+  if ($("inputPostVac")) $("inputPostVac").value = savedPost;
 
   document.querySelectorAll(".nav-item").forEach(btn => {
-    btn.onclick = () => {
-      const tabId = btn.dataset.tab;
-      
-      document.querySelectorAll(".nav-item").forEach(b => {
-        b.className = "nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 transition-all";
-      });
-
-      // Conservar mt-auto para el botón de ubicación al fondo de la barra
-      const extraClass = tabId === "location" ? " mt-auto" : "";
-      btn.className = `nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all bg-blue-600/15 text-blue-400 border border-blue-500/30${extraClass}`;
-
-      document.querySelectorAll(".tab-pane").forEach(pane => pane.classList.add("hidden"));
-      const targetPane = document.getElementById(`tab-${tabId}`);
-      if (targetPane) targetPane.classList.remove("hidden");
-
-      const titles = {
-        dashboard: "Dashboard General",
-        location: "Ubicación del Dispositivo",
-        history: "Historial y Eventos",
-        alerts: "Alertas y Reglas",
-        device: "Salud del Dispositivo",
-        calibration: "Calibración de Altura"
-      };
-      document.getElementById("viewTitle").textContent = titles[tabId] || "Dashboard";
-
-      if (tabId === "location") {
-        initLeafletMap();
-      }
-    };
+    btn.onclick = () => irA(btn.dataset.tab);
   });
 
-  const btnToggleDemo = document.getElementById("btnToggleDemo");
+  if ($("btnVolverMapa")) $("btnVolverMapa").onclick = () => irA("map");
+
+  const btnRuta = $("btnRuta");
+  if (btnRuta) {
+    btnRuta.onclick = () => {
+      state.rutaVisible = !state.rutaVisible;
+      btnRuta.textContent = state.rutaVisible ? "Ocultar ruta" : "Mostrar ruta";
+      rutaClave = "";
+      actualizarRuta();
+    };
+  }
+
+  const btnMover = $("btnMoverBote");
+  if (btnMover) {
+    btnMover.onclick = () => {
+      const m = marcadores[1];
+      if (!m) return;
+      state.moviendo = !state.moviendo;
+      if (state.moviendo) {
+        m.dragging.enable();
+        btnMover.textContent = "Arrastra el Bote 1 al lugar correcto…";
+      } else {
+        m.dragging.disable();
+        btnMover.textContent = "Ajustar posición del Bote 1";
+        renderMapaBotes();
+      }
+    };
+  }
+
+  const btnMiUbic = $("btnMiUbicacion");
+  if (btnMiUbic) {
+    btnMiUbic.onclick = () => {
+      if (!("geolocation" in navigator)) { alert("Este navegador no soporta geolocalización."); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => guardarUbicacion(pos.coords.latitude, pos.coords.longitude),
+        (err) => alert("No se pudo obtener tu ubicación: " + err.message),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    };
+  }
+
+  const btnToggleDemo = $("btnToggleDemo");
   if (btnToggleDemo) {
     btnToggleDemo.onclick = () => {
       state.demoMode = !state.demoMode;
+      if (state.demoMode) $("aviso").hidden = true;
       updateModeStatus();
       fetchTelemetry();
     };
@@ -760,13 +1171,13 @@ function setupEventListeners() {
     };
   });
 
-  const btnAct = document.getElementById("btnAct");
+  const btnAct = $("btnAct");
   if (btnAct) {
     btnAct.onclick = async () => {
       btnAct.disabled = true;
       btnAct.classList.add("opacity-50", "cursor-wait");
       try {
-        if (!state.demoMode) {
+        if (boteActivo().real && !state.demoMode) {
           await llamarParticleFunc("medir", "1");
         }
         await fetchTelemetry();
@@ -779,62 +1190,75 @@ function setupEventListeners() {
     };
   }
 
-  const selMin = document.getElementById("selMin");
+  const selMin = $("selMin");
   if (selMin) {
     selMin.onchange = async (e) => {
       const mins = e.target.value;
       if (!state.demoMode) {
-        try {
-          await llamarParticleFunc("intervalo", mins);
-        } catch (err) { console.error(err); }
+        try { await llamarParticleFunc("intervalo", mins); } catch (err) { console.error(err); }
       }
       clearInterval(state.timer);
       state.timer = setInterval(fetchTelemetry, parseInt(mins) * 60 * 1000);
     };
   }
 
-  if (document.getElementById("btnLoginModal")) document.getElementById("btnLoginModal").onclick = () => document.getElementById("loginModal").classList.remove("hidden");
-  if (document.getElementById("btnCloseLogin")) document.getElementById("btnCloseLogin").onclick = () => document.getElementById("loginModal").classList.add("hidden");
-  if (document.getElementById("btnEntrar")) document.getElementById("btnEntrar").onclick = loginParticle;
+  if ($("btnLoginModal")) $("btnLoginModal").onclick = () => $("loginModal").classList.remove("hidden");
+  if ($("btnCloseLogin")) $("btnCloseLogin").onclick = () => $("loginModal").classList.add("hidden");
+  if ($("btnEntrar")) $("btnEntrar").onclick = loginParticle;
 
-  if (document.getElementById("btnCerrarSesionModal")) {
-    document.getElementById("btnCerrarSesionModal").onclick = () => {
+  if ($("btnCerrarSesionModal")) {
+    $("btnCerrarSesionModal").onclick = () => {
       state.token = "";
       sessionStorage.removeItem("pt");
       sessionStorage.removeItem("pd");
       state.demoMode = true;
+      $("aviso").hidden = true;
       updateModeStatus();
-      document.getElementById("loginModal").classList.add("hidden");
+      $("loginModal").classList.add("hidden");
       fetchTelemetry();
     };
   }
 
-  if (document.getElementById("btnExportCsv")) document.getElementById("btnExportCsv").onclick = exportToCsv;
-  if (document.getElementById("searchHistory")) document.getElementById("searchHistory").oninput = renderHistoryTable;
-  if (document.getElementById("filterComp")) document.getElementById("filterComp").onchange = renderHistoryTable;
+  if ($("btnExportCsv")) $("btnExportCsv").onclick = exportToCsv;
+  if ($("searchHistory")) $("searchHistory").oninput = renderHistoryTable;
+  if ($("filterComp")) $("filterComp").onchange = renderHistoryTable;
 
-  const frmCalib = document.getElementById("frmCalib");
+  const frmCalib = $("frmCalib");
   if (frmCalib) {
-    frmCalib.onsubmit = (e) => {
+    frmCalib.onsubmit = async (e) => {
       e.preventDefault();
-      state.depths = [
-        parseFloat(document.getElementById("depth1").value),
-        parseFloat(document.getElementById("depth2").value),
-        parseFloat(document.getElementById("depth3").value)
-      ];
-      localStorage.setItem("bote_depths", JSON.stringify(state.depths));
-      
-      CONFIG.compartimentos.forEach(c => {
-        const lblDev = document.getElementById(`lblDepthDev-${c.id}`);
-        if (lblDev) lblDev.textContent = `${state.depths[c.id-1]} cm`;
-      });
+      const msg = $("msgCalib");
+      const aviso = (txt, cls) => { msg.textContent = txt; msg.className = `text-[11px] text-center min-h-[1.2em] ${cls}`; };
 
-      alert("¡Calibración guardada exitosamente!");
-      renderAll();
+      const vacio = CONFIG.compartimentos.map(c => parseFloat($(`vacio${c.id}`).value));
+      const lleno = CONFIG.compartimentos.map(c => parseFloat($(`lleno${c.id}`).value));
+      const mal = vacio.findIndex((v, i) => !(lleno[i] >= 2 && v <= 400 && v - lleno[i] >= 3));
+      if (mal !== -1) {
+        aviso(`Revisa ${CONFIG.compartimentos[mal].nombre}: "lleno" ≥ 2 cm, "vacío" ≤ 400 cm y al menos 3 cm de diferencia.`, "text-red-400");
+        return;
+      }
+
+      try {
+        if (!state.demoMode) {
+          aviso("Enviando calibración a la Photon...", "text-slate-400");
+          for (let i = 0; i < 3; i++) {
+            const res = await llamarParticleFunc("calibrar", `${i + 1},${vacio[i]},${lleno[i]}`);
+            if (res.return_value !== 1) throw new Error(`la Photon rechazó el sensor ${i + 1} (¿ya cargaste el firmware nuevo?)`);
+          }
+          await llamarParticleFunc("medir", "1");
+        }
+        state.calib = { vacio, lleno };
+        localStorage.setItem("bote_calib", JSON.stringify(state.calib));
+        renderSaludSensores();
+        aviso(state.demoMode ? "Calibración guardada (modo demo: solo local)." : "Calibración guardada en la Photon. La siguiente lectura ya la usa.", "text-emerald-400");
+        if (!state.demoMode) await fetchTelemetry();
+      } catch (err) {
+        aviso("Error: " + err.message, "text-red-400");
+      }
     };
   }
 
-  const btnTogglePush = document.getElementById("btnTogglePush");
+  const btnTogglePush = $("btnTogglePush");
   if (btnTogglePush) {
     btnTogglePush.onclick = () => {
       if (!("Notification" in window)) {
@@ -845,7 +1269,7 @@ function setupEventListeners() {
         if (permission === "granted") {
           state.pushEnabled = !state.pushEnabled;
           btnTogglePush.textContent = state.pushEnabled ? "Activado" : "Desactivado";
-          btnTogglePush.className = state.pushEnabled 
+          btnTogglePush.className = state.pushEnabled
             ? "px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white transition"
             : "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 transition";
         }
@@ -853,32 +1277,32 @@ function setupEventListeners() {
     };
   }
 
-  const btnToggleAudio = document.getElementById("btnToggleAudio");
+  const btnToggleAudio = $("btnToggleAudio");
   if (btnToggleAudio) {
     btnToggleAudio.onclick = () => {
       state.audioEnabled = !state.audioEnabled;
       btnToggleAudio.textContent = state.audioEnabled ? "Activado" : "Desactivado";
-      btnToggleAudio.className = state.audioEnabled 
+      btnToggleAudio.className = state.audioEnabled
         ? "px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white transition"
         : "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-300 transition";
     };
   }
 
-  if (document.getElementById("btnTestSound")) document.getElementById("btnTestSound").onclick = () => playTone(880, 0.4);
+  if ($("btnTestSound")) $("btnTestSound").onclick = () => playTone(880, 0.4);
 }
 
-// LOGIN DE PARTICLE
+// ===================== LOGIN DE PARTICLE =====================
 async function loginParticle() {
-  const email = document.getElementById("email").value.trim();
-  const pass = document.getElementById("pass").value;
-  const devId = document.getElementById("devId").value.trim() || CONFIG.deviceIdDefault;
-  const otp = document.getElementById("otp").value.trim();
-  const msg = document.getElementById("msg");
+  const email = $("email").value.trim();
+  const pass = $("pass").value;
+  const devId = $("devId").value.trim() || CONFIG.deviceIdDefault;
+  const otp = $("otp").value.trim();
+  const msg = $("msg");
 
   msg.textContent = "Conectando con Particle Cloud...";
 
   try {
-    const bodyParams = state.mfaToken 
+    const bodyParams = state.mfaToken
       ? { grant_type: "urn:custom:mfa-otp", mfa_token: state.mfaToken, otp: otp }
       : { grant_type: "password", username: email, password: pass };
 
@@ -890,12 +1314,12 @@ async function loginParticle() {
       },
       body: new URLSearchParams({ expires_in: "28800", ...bodyParams })
     });
-    
+
     const j = await r.json();
 
     if (j.error === "mfa_required") {
       state.mfaToken = j.mfa_token;
-      document.getElementById("otpBox").classList.remove("hidden");
+      $("otpBox").classList.remove("hidden");
       msg.textContent = "Escribe tu código de verificación OTP y vuelve a presionar Entrar.";
       return;
     }
@@ -911,115 +1335,20 @@ async function loginParticle() {
     sessionStorage.setItem("pt", state.token);
     sessionStorage.setItem("pd", state.deviceId);
 
-    document.getElementById("loginModal").classList.add("hidden");
+    $("loginModal").classList.add("hidden");
     updateModeStatus();
     fetchHardwareInterval();
+    leerCalibDePhoton();
     fetchTelemetry();
   } catch (e) {
     msg.textContent = "Error: " + e.message;
   }
 }
 
-// --- LÓGICA DEL MAPA OPENSTREETMAP CON UBICACIÓN REAL Y PRECISA ---
-let mapInstance = null;
-let markerInstance = null;
-
-// Obtener ubicación real de alta precisión
-function obtenerUbicacionPrecisa(callback) {
-  const token = localStorage.getItem('particle_token') || sessionStorage.getItem('pt');
-  const devId = localStorage.getItem('particle_dev_id') || sessionStorage.getItem('pd') || CONFIG.deviceIdDefault;
-
-  if (token && devId && !state.demoMode) {
-    fetch(`https://api.particle.io/v1/devices/${devId}/ubicacion?access_token=${token}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.result) {
-          const coords = data.result.split(',').map(n => parseFloat(n.trim()));
-          if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
-            callback(coords[0], coords[1], "Sensor GPS Particle Photon");
-            return;
-          }
-        }
-        fallbackGeolocalizacionAltaPrecision(callback);
-      })
-      .catch(() => fallbackGeolocalizacionAltaPrecision(callback));
-  } else {
-    fallbackGeolocalizacionAltaPrecision(callback);
-  }
-}
-
-// Geolocalización del navegador con MÁXIMA precisión (GPS/red preciso)
-function fallbackGeolocalizacionAltaPrecision(callback) {
-  if ("geolocation" in navigator) {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        callback(lat, lng, "Geolocalización GPS / Red de Alta Precisión");
-      },
-      (error) => {
-        console.warn("No se obtuvo geolocalización precisa, usando coordenadas por defecto.", error);
-        callback(19.4326, -99.1332, "Ubicación Predeterminada");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  } else {
-    callback(19.4326, -99.1332, "Ubicación Predeterminada");
-  }
-}
-
-function initLeafletMap() {
-  const mapContainer = document.getElementById('map');
-  if (!mapContainer) return;
-
-  obtenerUbicacionPrecisa((lat, lng, origen) => {
-    if (!mapInstance) {
-      // Zoom 16 para mostrar la ubicación exacta en alta resolución
-      mapInstance = L.map('map').setView([lat, lng], 16);
-
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-      }).addTo(mapInstance);
-
-      // Marcador FIJO e INAMOVIBLE (draggable: false)
-      markerInstance = L.marker([lat, lng], { draggable: false }).addTo(mapInstance);
-
-      markerInstance.bindPopup(`
-        <div style="font-family: Inter, sans-serif; color: #0b1220;">
-          <b style="font-size: 13px;">Bote Inteligente Particle Photon</b><br/>
-          <span style="font-size: 11px; color: #16a34a; font-weight: bold;">● Dispositivo En Línea</span><br/>
-          <span style="font-size: 11px; color: #64748b;">${origen}</span><br/>
-          <span style="font-size: 11px; color: #334155;">Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}</span>
-        </div>
-      `).openPopup();
-
-    } else {
-      mapInstance.setView([lat, lng], 16);
-      if (markerInstance) {
-        markerInstance.setLatLng([lat, lng]);
-        markerInstance.getPopup().setContent(`
-          <div style="font-family: Inter, sans-serif; color: #0b1220;">
-            <b style="font-size: 13px;">Bote Inteligente Particle Photon</b><br/>
-            <span style="font-size: 11px; color: #16a34a; font-weight: bold;">● Dispositivo En Línea</span><br/>
-            <span style="font-size: 11px; color: #64748b;">${origen}</span><br/>
-            <span style="font-size: 11px; color: #334155;">Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}</span>
-          </div>
-        `);
-      }
-    }
-
-    // Forzar renderizado y centrado inmediato
-    setTimeout(() => {
-      if (mapInstance) mapInstance.invalidateSize();
-    }, 250);
-  });
-}
-
 // ================= TEMA CLARO / OSCURO =================
 function initThemeToggle() {
   const root = document.documentElement;
-  const btn = document.getElementById("themeToggle");
+  const btn = $("themeToggle");
   if (!btn) return;
 
   const syncSwitch = () => {

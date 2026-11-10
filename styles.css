@@ -239,3 +239,27 @@ select option {
   .theme-switch-thumb,
   .theme-icon { transition: none !important; }
 }
+/* Marcadores del mapa de botes */
+.bote-pin {
+  width: 46px;
+  height: 46px;
+  border-radius: 9999px;
+  background: #0b1220;
+  border: 4px solid var(--c, #4ade80);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 800 12px 'Inter', sans-serif;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+.base-pin {
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #ffffff;
+  font: 700 11px 'Inter', sans-serif;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
