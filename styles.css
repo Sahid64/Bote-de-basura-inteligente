@@ -30,9 +30,9 @@
   --pista: #1f2a44;
   --tenue: #1e293b;
   --tenue-hover: #334155;
-  --organico: #4ade80;
-  --reciclable: #38bdf8;
-  --inorganico: #f59e0b;
+  --plastico: #4ade80;
+  --aluminio: #38bdf8;
+  --organico: #f59e0b;
 }
 
 body {

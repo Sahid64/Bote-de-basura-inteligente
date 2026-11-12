@@ -1,18 +1,17 @@
 const CONFIG = {
   titulo: "Bote Inteligente",
   deviceIdDefault: "3f0036000947313037363132",
-  caidaVaciado: 25,
   umbrales: { medio: 50, casiLleno: 70, lleno: 80 },
   // Solo se usa si no hay ubicación guardada ni permiso de geolocalización
   ubicacionBase: { lat: 19.4326, lng: -99.1332 },
   // Base de recolección (inicio y fin de la ruta), relativa al Bote 1
   base: { dLat: -0.0012, dLng: -0.0009 },
   compartimentos: [
-    { id: 1, nombre: "Orgánico", icono: "leaf", colorHex: "#4ade80", colorVar: "--organico" },
-    { id: 2, nombre: "Reciclable", icono: "recycle", colorHex: "#38bdf8", colorVar: "--reciclable" },
-    { id: 3, nombre: "Inorgánico", icono: "trash", colorHex: "#f59e0b", colorVar: "--inorganico" }
+    { id: 1, nombre: "Plástico", icono: "recycle", colorHex: "#4ade80", colorVar: "--plastico" },
+    { id: 2, nombre: "Aluminio", icono: "can",     colorHex: "#38bdf8", colorVar: "--aluminio" },
+    { id: 3, nombre: "Orgánico", icono: "leaf",    colorHex: "#f59e0b", colorVar: "--organico" }
   ],
-  // Botes simulados: posición relativa al Bote 1 y nivel inicial [org, rec, inorg]
+  // Botes simulados: posición relativa al Bote 1 y nivel inicial [plástico, aluminio, orgánico]
   botesSim: [
     { id: 2, nombre: "Bote 2 · Entrada",        dLat:  0.0022, dLng:  0.0016, nivel: [78, 52, 85] },
     { id: 3, nombre: "Bote 3 · Cafetería",      dLat: -0.0015, dLng:  0.0030, nivel: [35, 60, 20] },
@@ -60,9 +59,14 @@ let state = {
   audioEnabled: false,
   activeId: 1,
   botes: {},
-  ubicacion: leerJSON("bote_ubicacion", null), // ubicación guardada del Bote 1
+  pos: leerJSON("bote_pos", null),
   ubicFuente: "predeterminada",
+  ubicError: "",
+  precision: null,
   moviendo: false,
+  arrastrando: false,
+  modoRuta: "vehiculo",
+  salud: null,
   rutaVisible: true,
   calib: calibInicial(),
   sensorOk: [true, true, true],
@@ -71,6 +75,7 @@ let state = {
 
 const SVG_ICONS = {
   leaf: '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>',
+  can: '<ellipse cx="12" cy="5" rx="7" ry="2.5"/><path d="M5 5v14c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V5"/>',
   recycle: '<path d="M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5"/><path d="M11 19h8.203a1.83 1.83 0 0 1 1.556-.89 1.784 1.784 0 0 0 0-1.775l-1.226-2.12"/><path d="m14 16-3 3 3 3"/><path d="M8.293 13.596 7.196 9.5 3.1 10.598"/><path d="m9.344 5.811 1.093-1.892A1.83 1.83 0 0 1 11.985 3a1.784 1.784 0 0 1 1.546.888l3.943 6.843"/><path d="m13.378 9.633 4.096 1.098 1.097-4.096"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>'
 };
@@ -97,7 +102,7 @@ function cargarBote(b) {
 
 function guardarBote(b) {
   try {
-    localStorage.setItem(lsKey(b, "hist"), JSON.stringify(b.historial.slice(-500)));
+    localStorage.setItem(lsKey(b, "hist"), JSON.stringify(b.historial.slice(-2000)));
     localStorage.setItem(lsKey(b, "vac"), JSON.stringify(b.vaciados.slice(0, 50)));
   } catch (_) {}
 }
@@ -232,21 +237,79 @@ function initUi() {
   renderSaludSensores();
 }
 
+function estadoSensor(i) {
+  if (state.demoMode) return { txt: "Demo", cls: "text-sky-400", nota: "Datos simulados" };
+  if (!state.conexion.t) return { txt: "Sin datos", cls: "text-slate-400", nota: "Esperando la primera lectura" };
+  const s = state.salud && state.salud.sensores[i];
+  const h = ultimoDe(state.botes[1]);
+  if (!state.sensorOk[i]) return { txt: "Sin eco", cls: "text-red-400", nota: "Revisa cableado, TRIG/ECHO y que nada bloquee el sensor" };
+  if (s && s.m !== undefined && s.m < 3) return { txt: "Inestable", cls: "text-amber-400", nota: "Menos de 3 de 5 muestras válidas" };
+  if (s && s.e > 3) return { txt: "Lecturas ruidosas", cls: "text-amber-400", nota: "Las 5 muestras varían más de 3 cm" };
+  if (h && h.c[i] > state.calib.vacio[i] + 3) return { txt: "Fuera de rango", cls: "text-amber-400", nota: "Mide más lejos que el fondo calibrado: recalibra o revisa la posición" };
+  return { txt: "OK", cls: "text-emerald-400", nota: "Eco estable" };
+}
+
 function renderSaludSensores() {
   const cont = $("devSensorCards");
   if (!cont) return;
+  const todosFallan = !state.demoMode && state.conexion.t && !state.sensorOk.some(Boolean);
   cont.innerHTML = CONFIG.compartimentos.map((c, i) => {
-    const ok = state.demoMode || state.sensorOk[i];
+    const e = estadoSensor(i);
+    const s = !state.demoMode && state.salud && state.salud.sensores[i];
+    const det = s && s.m !== undefined
+      ? `<p class="text-[11px] text-slate-400">Muestras válidas: <span class="text-slate-200 font-medium">${s.m}/5</span> · Variación: <span class="text-slate-200 font-medium">${s.e} cm</span> · Fallos seguidos: <span class="text-slate-200 font-medium">${s.f}</span></p>` : "";
     return `
     <div class="bg-boxDark p-4 rounded-xl border border-borderDark space-y-2">
       <div class="flex items-center justify-between text-xs font-bold text-white">
-        <span>Sensor ${c.nombre} (HC-SR04)</span>
-        <span class="${ok ? "text-emerald-400" : "text-red-400"}">${ok ? "OK" : "Sin eco"}</span>
+        <span>${c.nombre} (HC-SR04)</span><span class="${e.cls}">${e.txt}</span>
       </div>
-      <p class="text-[11px] text-slate-400">Eco ultrasónico: <span class="text-slate-200 font-medium">${ok ? "Estable" : "Sin respuesta"}</span></p>
+      <p class="text-[11px] text-slate-400">${e.nota}</p>
+      ${det}
       <p class="text-[11px] text-slate-400">Vacío / Lleno: <span class="text-slate-200 font-medium">${state.calib.vacio[i]} / ${state.calib.lleno[i]} cm</span></p>
     </div>`;
-  }).join("");
+  }).join("") + (todosFallan ? `<p class="sm:col-span-3 text-[11px] text-amber-400">Los 3 sensores fallaron a la vez: lo más probable es la alimentación de 5 V (Nano/powerbank) o el GND común.</p>` : "");
+}
+
+function formatoUptime(s) {
+  s = Number(s);
+  if (!isFinite(s)) return "--";
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+
+function renderSaludDispositivo() {
+  const set = (id, txt, cls) => { const el = $(id); if (el) { el.textContent = txt; if (cls) el.className = cls; } };
+  const s = state.demoMode ? null : state.salud;
+
+  const bar = $("devRssiBar");
+  if (s && s.rssi) {
+    const r = s.rssi;
+    const q = r >= -60 ? ["Excelente", "text-emerald-400", "#4ade80"]
+            : r >= -70 ? ["Buena", "text-emerald-400", "#4ade80"]
+            : r >= -80 ? ["Regular", "text-amber-400", "#f59e0b"]
+            : ["Débil", "text-red-400", "#ef4444"];
+    set("devRssiVal", `${r} dBm`);
+    set("devRssiCal", q[0], `${q[1]} font-bold`);
+    if (bar) { bar.style.width = Math.max(5, Math.min(100, ((r + 100) / 60) * 100)) + "%"; bar.style.background = q[2]; }
+  } else {
+    set("devRssiVal", "-- dBm");
+    set("devRssiCal", state.demoMode ? "Modo demo" : "Sin dato", "text-slate-400 font-bold");
+    if (bar) bar.style.width = "0%";
+  }
+
+  const c = state.conexion;
+  const intervalo = parseInt(($("selMin") || {}).value) || 5;
+  let estado, cls;
+  if (state.demoMode) { estado = "Modo demo"; cls = "text-sky-400"; }
+  else if (!c.t) { estado = "Esperando datos"; cls = "text-slate-400"; }
+  else if (!c.conectado) { estado = "Sin conexión"; cls = "text-red-400"; }
+  else if (Date.now() - c.t > intervalo * 60000 * 2.5) { estado = "Sin datos recientes"; cls = "text-amber-400"; }
+  else { estado = "En línea"; cls = "text-emerald-400"; }
+  set("devConn", estado, `text-2xl font-extrabold ${cls}`);
+  set("devLastRead", c.t && !state.demoMode ? new Date(c.t).toLocaleString("es-MX") : "--");
+
+  set("devUptime", s && s.uptime != null ? formatoUptime(s.uptime) : (state.demoMode ? "Demo" : "--"));
+  set("devVersion", s && s.version ? s.version : "--");
 }
 
 function tiempoRelativoVaciado(compId) {
@@ -357,9 +420,17 @@ function processParticleData(d, coreInfo) {
   const b = state.botes[1];
   const t = d.t ? d.t * 1000 : Date.now();
 
-  state.conexion = { conectado: true, t }; // si la lectura llegó, la Photon está en línea
+  state.conexion = {
+    conectado: coreInfo && typeof coreInfo.connected === "boolean" ? coreInfo.connected : true,
+    t
+  };
+  state.salud = {
+    rssi: Number(d.w) || null,
+    uptime: d.u ?? null,
+    version: d.v || null,
+    sensores: [1, 2, 3].map(n => ({ m: d["m" + n], e: d["e" + n], f: d["f" + n] }))
+  };
 
-  // Al llegar datos reales se descartan los de demostración
   if (b.historial.some(h => h.sim)) {
     b.historial = b.historial.filter(h => !h.sim);
     b.vaciados = b.vaciados.filter(v => !v.sim);
@@ -370,7 +441,7 @@ function processParticleData(d, coreInfo) {
   for (let i = 0; i < 3; i++) {
     const dist = Number(d["c" + (i + 1)]);
     let pct = d["p" + (i + 1)];
-    const ok = dist > 0; // -1 = el sensor no recibió eco
+    const ok = dist > 0;
     if (ok && !(typeof pct === "number" && pct >= 0)) pct = pctDesdeCm(dist, i);
     state.sensorOk[i] = ok;
     c.push(ok ? dist : (ultimo ? ultimo.c[i] : 0));
@@ -378,21 +449,21 @@ function processParticleData(d, coreInfo) {
   }
 
   renderSaludSensores();
-  if (!state.sensorOk.some(Boolean)) return; // ningún sensor midió: no se grafica nada
-
-  // Misma lectura que la anterior (la Photon solo actualiza cada X min): no se duplica
+  if (!state.sensorOk.some(Boolean)) return;
   if (ultimo && ultimo.t === t) return;
 
+  const pre  = parseInt(localStorage.getItem("umbralPreVac"))  || 60;
+  const post = parseInt(localStorage.getItem("umbralPostVac")) || 10;
   if (ultimo) {
     p.forEach((val, idx) => {
-      if (ultimo.p[idx] - val >= CONFIG.caidaVaciado) {
+      if (state.sensorOk[idx] && ultimo.p[idx] >= pre && val <= post) {
         registrarVaciado(b, idx + 1, ultimo.p[idx], val, t, false);
       }
     });
   }
 
   b.historial.push({ t, p, c });
-  if (b.historial.length > 500) b.historial.shift();
+  if (b.historial.length > 2000) b.historial.shift();
   guardarBote(b);
 
   p.forEach((pct, idx) => {
@@ -470,6 +541,7 @@ function renderAll() {
   renderVaciadosTable();
   renderHistoryTable();
   renderLecturasCalib();
+  renderSaludDispositivo();
 }
 
 function renderAreaChart() {
@@ -574,9 +646,7 @@ function renderAreaChart() {
       const timeStr = new Date(closest.t).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       tooltip.innerHTML = `
         <div class="font-bold text-white mb-1 border-b border-slate-700 pb-1">${timeStr}</div>
-        <div class="flex items-center justify-between gap-4 text-emerald-400"><span>Orgánico:</span><b>${closest.p[0]}% · ${closest.c[0]} cm</b></div>
-        <div class="flex items-center justify-between gap-4 text-sky-400"><span>Reciclable:</span><b>${closest.p[1]}% · ${closest.c[1]} cm</b></div>
-        <div class="flex items-center justify-between gap-4 text-amber-400"><span>Inorgánico:</span><b>${closest.p[2]}% · ${closest.c[2]} cm</b></div>
+        ${CONFIG.compartimentos.map((c, i) => `<div class="flex items-center justify-between gap-4 ${["text-emerald-400","text-sky-400","text-amber-400"][i]}"><span>${c.nombre}:</span><b>${closest.p[i]}% · ${closest.c[i]} cm</b></div>`).join("")}
       `;
       tooltip.style.left = `${getX(closest.t)}px`;
       tooltip.style.top = `${getY(Math.max(...closest.p)) - 10}px`;
@@ -709,7 +779,7 @@ function sendPushNotification(title, body) {
 
 function exportToCsv() {
   const b = boteActivo();
-  let csv = "Timestamp,Fecha_Hora,Organico_Pct,Reciclable_Pct,Inorganico_Pct,Dist_Org_cm,Dist_Rec_cm,Dist_Inorg_cm\n";
+  let csv = "Timestamp,Fecha_Hora,Plastico_Pct,Aluminio_Pct,Organico_Pct,Dist_Plastico_cm,Dist_Aluminio_cm,Dist_Organico_cm\n";  
   b.historial.forEach(h => {
     const dateStr = `"${new Date(h.t).toLocaleString("es-MX")}"`;
     csv += `${h.t},${dateStr},${h.p[0]},${h.p[1]},${h.p[2]},${h.c[0]},${h.c[1]},${h.c[2]}\n`;
@@ -772,11 +842,21 @@ function construirFormCalib() {
   `).join("");
 
   cont.querySelectorAll("[data-tomar]").forEach(btn => {
-    btn.onclick = () => {
-      const h = ultimoDe(state.botes[1]);
-      if (!h) return;
-      const i = parseInt(btn.dataset.i);
-      $(`${btn.dataset.tomar}${i + 1}`).value = h.c[i];
+    btn.onclick = async () => {
+      const i = parseInt(btn.dataset.i), msg = $("msgCalib");
+      btn.disabled = true;
+      try {
+        if (!state.demoMode) {
+          await llamarParticleFunc("medir", "1");
+          await fetchTelemetry();
+          if (!state.sensorOk[i]) throw new Error(`el sensor ${CONFIG.compartimentos[i].nombre} no recibió eco`);
+        }
+        const h = ultimoDe(state.botes[1]);
+        if (h) $(`${btn.dataset.tomar}${i + 1}`).value = h.c[i];
+      } catch (e) {
+        msg.textContent = "No se tomó la lectura: " + e.message;
+        msg.className = "text-[11px] text-center min-h-[1.2em] text-red-400";
+      } finally { btn.disabled = false; }
     };
   });
   cargarFormCalib();
@@ -833,15 +913,44 @@ let capaRuta = null;
 let rutaClave = "";
 let rutaSeq = 0;
 
-function posicionBote(b) {
-  const base = state.ubicacion || CONFIG.ubicacionBase;
-  if (b.real) return { lat: base.lat, lng: base.lng };
-  return { lat: base.lat + b.dLat, lng: base.lng + b.dLng };
+function posicionPorDefecto(id, centro) {
+  const c = centro || CONFIG.ubicacionBase;
+  if (id === "base") return { lat: c.lat + CONFIG.base.dLat, lng: c.lng + CONFIG.base.dLng };
+  const s = CONFIG.botesSim.find(x => x.id === id);
+  return s ? { lat: c.lat + s.dLat, lng: c.lng + s.dLng } : { lat: c.lat, lng: c.lng };
+}
+function posicionBote(b) { return (state.pos && state.pos[b.id]) || posicionPorDefecto(b.id); }
+function posicionBase() { return (state.pos && state.pos.base) || posicionPorDefecto("base"); }
+
+function guardarPosiciones() {
+  try { localStorage.setItem("bote_pos", JSON.stringify(state.pos)); } catch (_) {}
 }
 
-function posicionBase() {
-  const base = state.ubicacion || CONFIG.ubicacionBase;
-  return { lat: base.lat + CONFIG.base.dLat, lng: base.lng + CONFIG.base.dLng };
+// Coloca todo alrededor de un centro (solo "Usar mi ubicación" hace esto)
+function distribuirBotes(centro) {
+  state.pos = {};
+  botesLista().forEach(b => { state.pos[b.id] = posicionPorDefecto(b.id, centro); });
+  state.pos.base = posicionPorDefecto("base", centro);
+  guardarPosiciones();
+}
+
+// Un marcador movido a mano: solo cambia ese, el resto se queda
+function moverA(id, ll) {
+  if (!state.pos) {
+    state.pos = {};
+    botesLista().forEach(b => { state.pos[b.id] = posicionBote(b); });
+    state.pos.base = posicionBase();
+  }
+  state.pos[id] = { lat: parseFloat(ll.lat.toFixed(6)), lng: parseFloat(ll.lng.toFixed(6)) };
+  state.ubicFuente = "manual";
+  guardarPosiciones();
+  rutaClave = "";
+  renderMapaBotes();
+}
+
+function activarMovimiento(on) {
+  state.moviendo = on;
+  [...Object.values(marcadores), marcadorBase].forEach(m => m && m.dragging && (on ? m.dragging.enable() : m.dragging.disable()));
 }
 
 function colorPorNivel(pct) {
@@ -860,36 +969,37 @@ function resumenBote(b) {
 }
 
 function resolverUbicacion() {
-  if (state.ubicacion) { state.ubicFuente = "guardada"; return; }
-  state.ubicFuente = "predeterminada";
-  if (!("geolocation" in navigator)) return;
+  if (state.pos) { state.ubicFuente = "guardada"; return; }
+  const vieja = leerJSON("bote_ubicacion", null);   // versión anterior: solo el Bote 1
+  if (vieja) { distribuirBotes(vieja); state.ubicFuente = "guardada"; return; }
+  pedirUbicacion(false);
+}
+
+function pedirUbicacion(manual) {
+  if (!("geolocation" in navigator)) { if (manual) alert("Este navegador no soporta geolocalización."); return; }
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      if (state.ubicacion) return;
-      state.ubicacion = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      state.ubicFuente = "navegador";
+      distribuirBotes({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      state.ubicFuente = "tu ubicación";
+      state.precision = Math.round(pos.coords.accuracy);
+      state.ubicError = "";
       rutaClave = "";
       renderMapaBotes();
       ajustarVistaMapa();
     },
-    () => {},
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    (err) => {
+      state.ubicError = err.message;
+      if (manual) alert("No se pudo obtener tu ubicación: " + err.message);
+      renderMapaBotes();
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
   );
-}
-
-function guardarUbicacion(lat, lng) {
-  state.ubicacion = { lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) };
-  state.ubicFuente = "guardada";
-  try { localStorage.setItem("bote_ubicacion", JSON.stringify(state.ubicacion)); } catch (_) {}
-  rutaClave = "";
-  renderMapaBotes();
-  ajustarVistaMapa();
 }
 
 function initMapa() {
   const cont = $("map");
   if (!cont || mapa || typeof L === "undefined") return;
-  const centro = state.ubicacion || CONFIG.ubicacionBase;
+  const centro = posicionBote(state.botes[1]);
   mapa = L.map("map").setView([centro.lat, centro.lng], 16);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -954,8 +1064,9 @@ function renderMapaBotes() {
 
   const info = $("ubicInfo");
   if (info) {
-    const u = state.ubicacion || CONFIG.ubicacionBase;
-    info.textContent = `Bote 1: ${u.lat.toFixed(5)}, ${u.lng.toFixed(5)} (${state.ubicFuente}). Los botes 2 a 5 son simulados y se ubican a su alrededor.`;
+    const fuente = { manual: "ajustadas a mano", guardada: "guardadas", "tu ubicación": "a partir de tu ubicación", predeterminada: "en la ubicación predeterminada" }[state.ubicFuente] || state.ubicFuente;
+    const prec = state.ubicFuente === "tu ubicación" && state.precision ? ` (precisión ±${state.precision} m: arrastra los botes si no coincide)` : "";
+    info.textContent = `Posiciones ${fuente}${prec}. Los botes 2 a 5 son simulados.${state.ubicError ? " Ubicación del navegador: " + state.ubicError : ""}`;
   }
   if (!mapa) return;
 
@@ -972,20 +1083,12 @@ function renderMapaBotes() {
 
     let m = marcadores[b.id];
     if (!m) {
-      m = L.marker([pos.lat, pos.lng], { icon, draggable: false }).addTo(mapa);
+      m = L.marker([pos.lat, pos.lng], { icon, draggable: state.moviendo }).addTo(mapa);
       m.bindPopup(() => popupBote(b), { minWidth: 220 });
-      if (b.real) {
-        m.on("dragend", () => {
-          const ll = m.getLatLng();
-          state.moviendo = false;
-          m.dragging.disable();
-          const btn = $("btnMoverBote");
-          if (btn) btn.textContent = "Ajustar posición del Bote 1";
-          guardarUbicacion(ll.lat, ll.lng);
-        });
-      }
+      m.on("dragstart", () => { state.arrastrando = true; });
+      m.on("dragend", () => { state.arrastrando = false; moverA(b.id, m.getLatLng()); });
       marcadores[b.id] = m;
-    } else if (!(b.real && state.moviendo)) {
+    } else if (!state.arrastrando) {
       m.setLatLng([pos.lat, pos.lng]);
       m.setIcon(icon);
       if (m.isPopupOpen()) m.getPopup().update();
@@ -996,9 +1099,11 @@ function renderMapaBotes() {
   if (!marcadorBase) {
     marcadorBase = L.marker([pb.lat, pb.lng], {
       icon: L.divIcon({ className: "", html: '<div class="base-pin">Base</div>', iconSize: [48, 24], iconAnchor: [24, 12] }),
-      interactive: false
+      draggable: state.moviendo
     }).addTo(mapa);
-  } else {
+    marcadorBase.on("dragstart", () => { state.arrastrando = true; });
+    marcadorBase.on("dragend", () => { state.arrastrando = false; moverA("base", marcadorBase.getLatLng()); });
+  } else if (!state.arrastrando) {
     marcadorBase.setLatLng([pb.lat, pb.lng]);
   }
 
@@ -1012,48 +1117,61 @@ function distM(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Vecino más cercano partiendo de la base
-function ordenarRuta(botes) {
-  let actual = posicionBase();
-  const pend = [...botes];
-  const orden = [];
-  while (pend.length) {
-    let mejor = 0, dMin = Infinity;
-    pend.forEach((b, i) => {
-      const d = distM(actual, posicionBote(b));
-      if (d < dMin) { dMin = d; mejor = i; }
-    });
-    const [b] = pend.splice(mejor, 1);
-    orden.push(b);
-    actual = posicionBote(b);
-  }
-  return orden;
+const RUTA_SERVICIOS = {
+  vehiculo: { base: "https://router.project-osrm.org", perfil: "driving" },
+  pie: { base: "https://routing.openstreetmap.de/routed-foot", perfil: "foot" }
+};
+
+function permutaciones(a) {
+  if (a.length <= 1) return [a];
+  return a.flatMap((x, i) => permutaciones([...a.slice(0, i), ...a.slice(i + 1)]).map(r => [x, ...r]));
+}
+
+// Distancias por calles (OSRM /table); si falla, línea recta
+async function matrizDistancias(pts, srv) {
+  try {
+    const coords = pts.map(p => `${p.lng},${p.lat}`).join(";");
+    const r = await fetch(`${srv.base}/table/v1/${srv.perfil}/${coords}?annotations=distance`);
+    const j = await r.json();
+    if (j.code === "Ok" && j.distances && !j.distances.flat().some(v => v === null)) return j.distances;
+  } catch (_) {}
+  return pts.map(a => pts.map(b => distM(a, b)));
 }
 
 async function actualizarRuta() {
   if (!mapa) return;
   const info = $("rutaInfo");
-  const necesitan = botesLista().filter(b => resumenBote(b).max >= CONFIG.umbrales.casiLleno);
-  const orden = ordenarRuta(necesitan);
-  const u = state.ubicacion || CONFIG.ubicacionBase;
-  const clave = `${state.rutaVisible}|${orden.map(b => b.id).join(",")}|${u.lat.toFixed(5)},${u.lng.toFixed(5)}`;
-  if (clave === rutaClave) return; // nada cambió: no se vuelve a pedir la ruta
+  const botes = botesLista();
+  const alerta = botes.filter(b => resumenBote(b).max >= CONFIG.umbrales.lleno);
+  const base = posicionBase();
+  const posKey = [base, ...botes.map(posicionBote)].map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|");
+  const clave = `${state.modoRuta}|${state.rutaVisible}|${alerta.length > 0}|${posKey}`;
+  if (clave === rutaClave) return;
   rutaClave = clave;
+  const mi = ++rutaSeq;   // cancela cualquier petición anterior que siga en curso
 
   if (capaRuta) { mapa.removeLayer(capaRuta); capaRuta = null; }
   if (!state.rutaVisible) { if (info) info.textContent = "Ruta oculta."; return; }
-  if (!orden.length) { if (info) info.textContent = "Ningún bote necesita recolección por ahora (se recolectan los de ≥ 70 %)."; return; }
+  if (!alerta.length) { if (info) info.textContent = `Sin ruta: ningún bote ha llegado al umbral de alerta (≥ ${CONFIG.umbrales.lleno} %).`; return; }
 
-  const pts = [posicionBase(), ...orden.map(posicionBote), posicionBase()];
-  const mi = ++rutaSeq;
-  let coords = pts.map(p => [p.lat, p.lng]);
-  let extra = "";
-  let porCalles = false;
+  const srv = RUTA_SERVICIOS[state.modoRuta];
+  const D = await matrizDistancias([base, ...botes.map(posicionBote)], srv);
+  if (mi !== rutaSeq) return;
 
+  // Mejor orden: todas las permutaciones (Base → botes → Base)
+  let mejor = null, costeMin = Infinity;
+  permutaciones(botes.map((_, i) => i + 1)).forEach(p => {
+    let coste = D[0][p[0]] + D[p[p.length - 1]][0];
+    for (let k = 0; k < p.length - 1; k++) coste += D[p[k]][p[k + 1]];
+    if (coste < costeMin) { costeMin = coste; mejor = p; }
+  });
+  const orden = mejor.map(i => botes[i - 1]);
+  const pts = [base, ...orden.map(posicionBote), base];
+
+  let coords = pts.map(p => [p.lat, p.lng]), extra = "", porCalles = false;
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${pts.map(p => `${p.lng},${p.lat}`).join(";")}?overview=full&geometries=geojson`;
-    const r = await fetch(url);
-    const j = await r.json();
+    const url = `${srv.base}/route/v1/${srv.perfil}/${pts.map(p => `${p.lng},${p.lat}`).join(";")}?overview=full&geometries=geojson`;
+    const j = await (await fetch(url)).json();
     if (j.code === "Ok" && j.routes && j.routes[0]) {
       coords = j.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
       extra = ` · ${(j.routes[0].distance / 1000).toFixed(1)} km · ${Math.round(j.routes[0].duration / 60)} min`;
@@ -1061,10 +1179,11 @@ async function actualizarRuta() {
     }
   } catch (_) {}
 
-  if (mi !== rutaSeq) return; // llegó una petición más reciente
+  if (mi !== rutaSeq) return;
   capaRuta = L.polyline(coords, { color: "#3b82f6", weight: 5, opacity: 0.85, dashArray: porCalles ? null : "8 8" }).addTo(mapa);
   if (info) {
-    info.textContent = `Ruta: Base → ${orden.map(b => b.nombre.split(" · ")[0]).join(" → ")} → Base${extra}${porCalles ? "" : " (línea recta: sin servicio de rutas)"}`;
+    const modo = state.modoRuta === "pie" ? "a pie" : "en vehículo";
+    info.textContent = `Ruta ${modo}: Base → ${orden.map(b => b.nombre.split(" · ")[0]).join(" → ")} → Base${extra}${porCalles ? "" : " (línea recta: sin servicio de rutas)"}`;
   }
 }
 
@@ -1124,31 +1243,22 @@ function setupEventListeners() {
   const btnMover = $("btnMoverBote");
   if (btnMover) {
     btnMover.onclick = () => {
-      const m = marcadores[1];
-      if (!m) return;
-      state.moviendo = !state.moviendo;
-      if (state.moviendo) {
-        m.dragging.enable();
-        btnMover.textContent = "Arrastra el Bote 1 al lugar correcto…";
-      } else {
-        m.dragging.disable();
-        btnMover.textContent = "Ajustar posición del Bote 1";
-        renderMapaBotes();
-      }
+      activarMovimiento(!state.moviendo);
+      btnMover.textContent = state.moviendo ? "Listo (terminar de mover)" : "Mover botes y base";
     };
   }
 
   const btnMiUbic = $("btnMiUbicacion");
   if (btnMiUbic) {
     btnMiUbic.onclick = () => {
-      if (!("geolocation" in navigator)) { alert("Este navegador no soporta geolocalización."); return; }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => guardarUbicacion(pos.coords.latitude, pos.coords.longitude),
-        (err) => alert("No se pudo obtener tu ubicación: " + err.message),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
+      if (state.pos && !confirm("Esto reubicará todos los botes y la base alrededor de tu ubicación, incluso los que ajustaste a mano. ¿Continuar?")) return;
+      state.ubicError = "";
+      pedirUbicacion(true);
     };
   }
+
+  const selRuta = $("selModoRuta");
+  if (selRuta) selRuta.onchange = (e) => { state.modoRuta = e.target.value; rutaClave = ""; actualizarRuta(); };
 
   const btnToggleDemo = $("btnToggleDemo");
   if (btnToggleDemo) {
@@ -1249,11 +1359,16 @@ function setupEventListeners() {
         }
         state.calib = { vacio, lleno };
         localStorage.setItem("bote_calib", JSON.stringify(state.calib));
+        const b1 = state.botes[1];
+        b1.historial.forEach(h => { h.p = h.c.map((cm, k) => pctDesdeCm(cm, k)); });
+        guardarBote(b1);
+        renderAll();
         renderSaludSensores();
         aviso(state.demoMode ? "Calibración guardada (modo demo: solo local)." : "Calibración guardada en la Photon. La siguiente lectura ya la usa.", "text-emerald-400");
         if (!state.demoMode) await fetchTelemetry();
       } catch (err) {
         aviso("Error: " + err.message, "text-red-400");
+        leerCalibDePhoton();
       }
     };
   }

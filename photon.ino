@@ -29,6 +29,10 @@ int    nivel[3]     = {-1, -1, -1};
 int    nivelPrevio[3] = {-1, -1, -1}; 
 String datos = "{}";
 
+int    validas[3]    = {0, 0, 0};   // muestras válidas de 5
+double dispersion[3] = {0, 0, 0};   // máx - mín entre muestras (cm)
+int    fallos[3]     = {0, 0, 0};   // lecturas seguidas sin eco
+
 int intervaloMin = 5;
 int umbralPreVaciado = 60;  // Valor por defecto (>= 60%)
 int umbralPostVaciado = 10; // Valor por defecto (<= 10%)
@@ -72,17 +76,15 @@ double medir(int i) {
     if (d > 2.0 && d < 400.0) v[n++] = d;
     delay(30);
   }
-  if (n == 0) return -1.0;
-  
-  for (int a = 0; a < n - 1; a++) {
-    for (int b = 0; b < n - 1 - a; b++) {
-      if (v[b] > v[b + 1]) { 
-        double t = v[b]; 
-        v[b] = v[b + 1]; 
-        v[b + 1] = t; 
-      }
-    }
-  }
+  validas[i] = n;
+  if (n == 0) { fallos[i]++; dispersion[i] = 0; return -1.0; }
+  fallos[i] = 0;
+
+  for (int a = 0; a < n - 1; a++)
+    for (int b = 0; b < n - 1 - a; b++)
+      if (v[b] > v[b + 1]) { double t = v[b]; v[b] = v[b + 1]; v[b + 1] = t; }
+
+  dispersion[i] = v[n - 1] - v[0];
   return v[n / 2];
 }
 
@@ -187,8 +189,14 @@ void actualizar() {
   for (int i = 0; i < NUM_SENSORES; i++) {
     s += ",\"c" + String(i + 1) + "\":" + String(distancia[i], 1);
     s += ",\"p" + String(i + 1) + "\":" + String(nivel[i]);
+    s += ",\"m" + String(i + 1) + "\":" + String(validas[i]);
+    s += ",\"e" + String(i + 1) + "\":" + String(dispersion[i], 1);
+    s += ",\"f" + String(i + 1) + "\":" + String(fallos[i]);
   }
-  s += "}";
+  int rssi = (int8_t)WiFi.RSSI();               // funciona con cualquier versión de Device OS
+  s += ",\"w\":" + String(rssi > 0 ? 0 : rssi); // 0 = sin dato
+  s += ",\"u\":" + String(millis() / 1000UL);   // segundos encendida (se reinicia a los ~49 días)
+  s += ",\"v\":\"" + System.version() + "\"}";
   datos = s;
 
   Particle.publish("bote/nivel", datos, PRIVATE);
