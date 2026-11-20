@@ -167,7 +167,7 @@ function tickBoteSimulado(b) {
   });
   const c = p.map((v, i) => cmDesdePct(v, cal.vacio[i], cal.lleno[i]));
   b.historial.push({ t, p, c, sim: 1 });
-  if (b.historial.length > 500) b.historial.shift();
+  if (b.historial.length > 2000) b.historial.shift();
   guardarBote(b);
 }
 
@@ -384,7 +384,9 @@ async function llamarParticleFunc(fn, arg) {
     },
     body: new URLSearchParams({ arg })
   });
-  return await r.json();
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error(j.error_description || j.error || `Error HTTP ${r.status}`);
+  return j;
 }
 
 async function fetchHardwareInterval() {
@@ -440,9 +442,9 @@ function processParticleData(d, coreInfo) {
   const p = [], c = [];
   for (let i = 0; i < 3; i++) {
     const dist = Number(d["c" + (i + 1)]);
-    let pct = d["p" + (i + 1)];
+    let pct = Number(d["p" + (i + 1)]);
     const ok = dist > 0;
-    if (ok && !(typeof pct === "number" && pct >= 0)) pct = pctDesdeCm(dist, i);
+    if (ok && !(isFinite(pct) && pct >= 0)) pct = pctDesdeCm(dist, i);
     state.sensorOk[i] = ok;
     c.push(ok ? dist : (ultimo ? ultimo.c[i] : 0));
     p.push(ok ? pct : (ultimo ? ultimo.p[i] : 0));
@@ -669,9 +671,9 @@ function renderDonutChart(currentP) {
   const avg = Math.round(sum / 3);
 
   $("donutTotalVol").textContent = `${avg}%`;
-  $("pctDonutOrg").textContent = `${currentP[0]}%`;
-  $("pctDonutRec").textContent = `${currentP[1]}%`;
-  $("pctDonutInorg").textContent = `${currentP[2]}%`;
+  $("pctDonut1").textContent = `${currentP[0]}%`;
+  $("pctDonut2").textContent = `${currentP[1]}%`;
+  $("pctDonut3").textContent = `${currentP[2]}%`;
 
   if (sum === 0) {
     svg.innerHTML = `<circle cx="50" cy="50" r="38" style="stroke:var(--pista)" stroke-width="12" fill="none"/>`;
@@ -731,6 +733,7 @@ function renderHistoryTable() {
   if (!tbody) return;
   const searchInput = $("searchHistory");
   const search = searchInput ? searchInput.value.toLowerCase() : "";
+  const compSel = $("filterComp") ? $("filterComp").value : "all";
 
   let filtered = [...boteActivo().historial].reverse();
   if (search) {
@@ -740,17 +743,19 @@ function renderHistoryTable() {
   const lblTotal = $("lblTotalRegs");
   if (lblTotal) lblTotal.textContent = filtered.length;
 
+  const op = (idx) => (compSel === "all" || compSel === String(idx) ? "" : "opacity-25");
+
   tbody.innerHTML = filtered.slice(0, 50).map(h => {
     const timeStr = new Date(h.t).toLocaleString("es-MX");
     return `
       <tr class="hover:bg-boxDark/50 transition">
         <td class="p-3 font-medium text-slate-200">${timeStr}</td>
-        <td class="p-3 font-bold text-emerald-400">${h.p[0]}%</td>
-        <td class="p-3 font-bold text-sky-400">${h.p[1]}%</td>
-        <td class="p-3 font-bold text-amber-400">${h.p[2]}%</td>
-        <td class="p-3 text-slate-400">${h.c[0]} cm</td>
-        <td class="p-3 text-slate-400">${h.c[1]} cm</td>
-        <td class="p-3 text-slate-400">${h.c[2]} cm</td>
+        <td class="p-3 font-bold text-emerald-400 ${op(1)}">${h.p[0]}%</td>
+        <td class="p-3 font-bold text-sky-400 ${op(2)}">${h.p[1]}%</td>
+        <td class="p-3 font-bold text-amber-400 ${op(3)}">${h.p[2]}%</td>
+        <td class="p-3 text-slate-400 ${op(1)}">${h.c[0]} cm</td>
+        <td class="p-3 text-slate-400 ${op(2)}">${h.c[1]} cm</td>
+        <td class="p-3 text-slate-400 ${op(3)}">${h.c[2]} cm</td>
       </tr>
     `;
   }).join('');
@@ -845,14 +850,22 @@ function construirFormCalib() {
     btn.onclick = async () => {
       const i = parseInt(btn.dataset.i), msg = $("msgCalib");
       btn.disabled = true;
+      msg.textContent = "Tomando lectura del sensor...";
+      msg.className = "text-[11px] text-center min-h-[1.2em] text-slate-400";
       try {
         if (!state.demoMode) {
-          await llamarParticleFunc("medir", "1");
+          const res = await llamarParticleFunc("medir", "1");
+          if (res.return_value !== 1) throw new Error("la Photon no respondió a la medición");
           await fetchTelemetry();
+          if (!state.conexion.conectado) throw new Error("no hay conexión con la Photon");
           if (!state.sensorOk[i]) throw new Error(`el sensor ${CONFIG.compartimentos[i].nombre} no recibió eco`);
         }
         const h = ultimoDe(state.botes[1]);
-        if (h) $(`${btn.dataset.tomar}${i + 1}`).value = h.c[i];
+        if (h && h.c[i] > 0) {
+          $(`${btn.dataset.tomar}${i + 1}`).value = h.c[i];
+          msg.textContent = `Lectura tomada para ${CONFIG.compartimentos[i].nombre}: ${h.c[i]} cm.`;
+          msg.className = "text-[11px] text-center min-h-[1.2em] text-emerald-400";
+        }
       } catch (e) {
         msg.textContent = "No se tomó la lectura: " + e.message;
         msg.className = "text-[11px] text-center min-h-[1.2em] text-red-400";
@@ -1360,12 +1373,14 @@ function setupEventListeners() {
         state.calib = { vacio, lleno };
         localStorage.setItem("bote_calib", JSON.stringify(state.calib));
         const b1 = state.botes[1];
-        b1.historial.forEach(h => { h.p = h.c.map((cm, k) => pctDesdeCm(cm, k)); });
+        b1.historial.forEach(h => {
+          h.p = h.c.map((cm, k) => (cm > 0 ? pctDesdeCm(cm, k) : h.p[k]));
+        });
         guardarBote(b1);
+        if (!state.demoMode) await fetchTelemetry();
         renderAll();
         renderSaludSensores();
-        aviso(state.demoMode ? "Calibración guardada (modo demo: solo local)." : "Calibración guardada en la Photon. La siguiente lectura ya la usa.", "text-emerald-400");
-        if (!state.demoMode) await fetchTelemetry();
+        aviso(state.demoMode ? "Calibración guardada (modo demo: solo local)." : "Calibración guardada en la Photon y aplicada al historial.", "text-emerald-400");
       } catch (err) {
         aviso("Error: " + err.message, "text-red-400");
         leerCalibDePhoton();

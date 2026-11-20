@@ -156,6 +156,7 @@ int setCalibracion(String arg) {
 void actualizar() {
   bool haySeccionLlena = false;
   String detalleLleno = "";
+  String detalleVaciado = "";
   const char* nombres[3] = {"Plástico", "Aluminio", "Orgánico"};
 
   for (int i = 0; i < NUM_SENSORES; i++) {
@@ -172,9 +173,8 @@ void actualizar() {
     }
 
     // Detección automática de vaciado dinámico
-    if (nivelPrevio[i] >= umbralPreVaciado && nivel[i] <= umbralPostVaciado && nivelPrevio[i] != -1) {
-      String msgVaciado = String(nombres[i]) + " vaciado correctamente (bajó de " + String(nivelPrevio[i]) + "% a " + String(nivel[i]) + "%).";
-      Particle.publish("vaciado", msgVaciado, PRIVATE);
+    if (nivel[i] >= 0 && nivelPrevio[i] >= umbralPreVaciado && nivel[i] <= umbralPostVaciado && nivelPrevio[i] != -1) {
+      detalleVaciado += String(nombres[i]) + " (bajó de " + String(nivelPrevio[i]) + "% a " + String(nivel[i]) + "%); ";
     }
 
     if (nivel[i] >= 0) {
@@ -182,6 +182,10 @@ void actualizar() {
     }
     
     delay(50);
+  }
+
+  if (detalleVaciado.length() > 0) {
+    Particle.publish("vaciado", "Vaciado detectado: " + detalleVaciado, PRIVATE);
   }
 
   // Creación del JSON
@@ -194,7 +198,7 @@ void actualizar() {
     s += ",\"f" + String(i + 1) + "\":" + String(fallos[i]);
   }
   int rssi = (int8_t)WiFi.RSSI();               // funciona con cualquier versión de Device OS
-  s += ",\"w\":" + String(rssi > 0 ? 0 : rssi); // 0 = sin dato
+  s += ",\"w\":" + String((rssi >= 0 || rssi < -127) ? 0 : rssi); // 0 = sin dato
   s += ",\"u\":" + String(millis() / 1000UL);   // segundos encendida (se reinicia a los ~49 días)
   s += ",\"v\":\"" + System.version() + "\"}";
   datos = s;
