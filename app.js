@@ -62,7 +62,7 @@ let state = {
   audioEnabled: false,
   activeId: 1,
   botes: {},
-  firebaseUrl: (CONFIG.firebaseUrl || localStorage.getItem("bote_fb_url") || "").trim().replace(/\/+$/, ""),
+  firebaseUrl: (CONFIG.firebaseUrl || "").trim().replace(/\/+$/, ""),
   nombres: leerJSON("bote_nombres", {}),
   pos: leerJSON("bote_pos", null),
   ubicFuente: "predeterminada",
@@ -215,28 +215,6 @@ async function guardarMapaEnFirebase() {
     renderMapaBotes();
   } catch (e) {
     console.warn("No se pudo guardar en Firebase:", e.message);
-  }
-}
-
-function configurarFirebaseModal() {
-  const actual = state.firebaseUrl || "https://tu-proyecto-default-rtdb.firebaseio.com";
-  const url = prompt(
-    "URL de tu Firebase Realtime Database (ej. https://mi-proyecto-default-rtdb.firebaseio.com).\nDéjalo vacío para usar solo almacenamiento local:",
-    actual
-  );
-  if (url === null) return;
-  const limpia = url.trim().replace(/\/+$/, "").replace(/\/bote_mapa\.json$/i, "");
-  state.firebaseUrl = limpia;
-  try {
-    if (limpia) localStorage.setItem("bote_fb_url", limpia);
-    else localStorage.removeItem("bote_fb_url");
-  } catch (_) {}
-  if (limpia) {
-    cargarMapaDeFirebase().then(teniaDatos => {
-      if (!teniaDatos && state.pos) guardarMapaEnFirebase();
-    });
-  } else {
-    renderMapaBotes();
   }
 }
 
@@ -1082,7 +1060,21 @@ function renderLecturasCalib() {
 }
 
 // ===================== NAVEGACIÓN =====================
+function toggleSidebarMobile(mostrar) {
+  const sb = $("sidebar");
+  const ov = $("sidebarOverlay");
+  if (!sb || !ov) return;
+  if (mostrar) {
+    sb.classList.remove("-translate-x-full");
+    ov.classList.remove("hidden");
+  } else {
+    sb.classList.add("-translate-x-full");
+    ov.classList.add("hidden");
+  }
+}
+
 function irA(tabId) {
+  toggleSidebarMobile(false);
   document.querySelectorAll(".nav-item").forEach(btn => {
     btn.className = btn.dataset.tab === tabId ? NAV_ON : NAV_OFF;
   });
@@ -1450,9 +1442,11 @@ function setupEventListeners() {
   });
 
   if ($("btnVolverMapa")) $("btnVolverMapa").onclick = () => irA("map");
+  if ($("btnOpenSidebar")) $("btnOpenSidebar").onclick = () => toggleSidebarMobile(true);
+  if ($("btnCloseSidebar")) $("btnCloseSidebar").onclick = () => toggleSidebarMobile(false);
+  if ($("sidebarOverlay")) $("sidebarOverlay").onclick = () => toggleSidebarMobile(false);
   if ($("btnRenombrarBote")) $("btnRenombrarBote").onclick = () => renombrarBote(state.activeId);
   if ($("btnRenombrarBase")) $("btnRenombrarBase").onclick = renombrarBase;
-  if ($("btnFirebaseSync")) $("btnFirebaseSync").onclick = configurarFirebaseModal;
   if ($("btnSimLlenar")) $("btnSimLlenar").onclick = () => forzarNivelSimulado(boteActivo(), 85);
   if ($("btnSimVaciar")) $("btnSimVaciar").onclick = () => forzarNivelSimulado(boteActivo(), 5);
 
