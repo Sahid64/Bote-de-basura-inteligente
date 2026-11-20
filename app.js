@@ -1,6 +1,9 @@
 const CONFIG = {
   titulo: "Bote Inteligente",
   deviceIdDefault: "3f0036000947313037363132",
+  // Pega aquí la URL de tu Firebase Realtime Database (ej. "https://mi-bote-default-rtdb.firebaseio.com")
+  // para que todos los dispositivos que entren a Vercel compartan ubicaciones y nombres automáticamente:
+  firebaseUrl: "https://bote-inteligente-8f6c2-default-rtdb.firebaseio.com/",
   umbrales: { medio: 50, casiLleno: 70, lleno: 80 },
   // Solo se usa si no hay ubicación guardada ni permiso de geolocalización
   ubicacionBase: { lat: 19.4326, lng: -99.1332 },
@@ -59,6 +62,7 @@ let state = {
   audioEnabled: false,
   activeId: 1,
   botes: {},
+  firebaseUrl: (CONFIG.firebaseUrl || localStorage.getItem("bote_fb_url") || "").trim().replace(/\/+$/, ""),
   nombres: leerJSON("bote_nombres", {}),
   pos: leerJSON("bote_pos", null),
   ubicFuente: "predeterminada",
@@ -152,8 +156,93 @@ function nombreBase() {
   return (state.nombres && state.nombres.base) || "Base";
 }
 
+function aplicarNombres() {
+  botesLista().forEach(b => {
+    const def = b.id === 1 ? "Bote 1 · Photon" : (CONFIG.botesSim.find(s => s.id === b.id)?.nombre || `Bote ${b.id}`);
+    b.nombre = (state.nombres && state.nombres[b.id]) || def;
+  });
+  if (marcadorBase) {
+    marcadorBase.setIcon(L.divIcon({ className: "", html: `<div class="base-pin">${nombreBase()}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }));
+  }
+}
+
+// ===================== SINCRONIZACIÓN FIREBASE =====================
+async function cargarMapaDeFirebase() {
+  if (!state.firebaseUrl) return false;
+  try {
+    const r = await fetch(`${state.firebaseUrl}/bote_mapa.json`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (!data) return false;
+    let cambio = false;
+    if (data.pos && typeof data.pos === "object" && data.pos[1] && data.pos.base) {
+      state.pos = data.pos;
+      state.ubicFuente = "nube (Firebase)";
+      try { localStorage.setItem("bote_pos", JSON.stringify(state.pos)); } catch (_) {}
+      cambio = true;
+    }
+    if (data.nombres && typeof data.nombres === "object") {
+      state.nombres = data.nombres;
+      try { localStorage.setItem("bote_nombres", JSON.stringify(state.nombres)); } catch (_) {}
+      aplicarNombres();
+      cambio = true;
+    }
+    if (cambio) {
+      rutaClave = "";
+      actualizarVistas();
+      ajustarVistaMapa();
+    }
+    return cambio;
+  } catch (e) {
+    console.warn("No se pudo leer Firebase:", e.message);
+    return false;
+  }
+}
+
+async function guardarMapaEnFirebase() {
+  if (!state.firebaseUrl) return;
+  try {
+    await fetch(`${state.firebaseUrl}/bote_mapa.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pos: state.pos,
+        nombres: state.nombres,
+        updatedAt: Date.now()
+      })
+    });
+    state.ubicFuente = "nube (Firebase)";
+    renderMapaBotes();
+  } catch (e) {
+    console.warn("No se pudo guardar en Firebase:", e.message);
+  }
+}
+
+function configurarFirebaseModal() {
+  const actual = state.firebaseUrl || "https://tu-proyecto-default-rtdb.firebaseio.com";
+  const url = prompt(
+    "URL de tu Firebase Realtime Database (ej. https://mi-proyecto-default-rtdb.firebaseio.com).\nDéjalo vacío para usar solo almacenamiento local:",
+    actual
+  );
+  if (url === null) return;
+  const limpia = url.trim().replace(/\/+$/, "").replace(/\/bote_mapa\.json$/i, "");
+  state.firebaseUrl = limpia;
+  try {
+    if (limpia) localStorage.setItem("bote_fb_url", limpia);
+    else localStorage.removeItem("bote_fb_url");
+  } catch (_) {}
+  if (limpia) {
+    cargarMapaDeFirebase().then(teniaDatos => {
+      if (!teniaDatos && state.pos) guardarMapaEnFirebase();
+    });
+  } else {
+    renderMapaBotes();
+  }
+}
+
 function guardarNombres() {
   try { localStorage.setItem("bote_nombres", JSON.stringify(state.nombres)); } catch (_) {}
+  guardarMapaEnFirebase();
 }
 
 function renombrarBote(id) {
@@ -252,6 +341,7 @@ window.addEventListener("DOMContentLoaded", () => {
     leerCalibDePhoton();
     fetchTelemetry();
   }
+  cargarMapaDeFirebase();
   state.timer = setInterval(fetchTelemetry, 15000);
 });
 
@@ -411,6 +501,7 @@ function tiempoRelativoVaciado(compId) {
 async function fetchTelemetry() {
   // Los botes simulados avanzan siempre
   botesLista().forEach(b => { if (!b.real) tickBoteSimulado(b); });
+  if (state.firebaseUrl && !state.arrastrando) cargarMapaDeFirebase();
 
   if (state.demoMode) {
     tickBoteSimulado(state.botes[1]);
@@ -1036,6 +1127,7 @@ function posicionBase() { return (state.pos && state.pos.base) || posicionPorDef
 
 function guardarPosiciones() {
   try { localStorage.setItem("bote_pos", JSON.stringify(state.pos)); } catch (_) {}
+  guardarMapaEnFirebase();
 }
 
 // Coloca todo alrededor de un centro (solo "Usar mi ubicación" hace esto)
@@ -1176,7 +1268,13 @@ function renderMapaBotes() {
 
   const info = $("ubicInfo");
   if (info) {
-    const fuente = { manual: "ajustadas a mano", guardada: "guardadas", "tu ubicación": "a partir de tu ubicación", predeterminada: "en la ubicación predeterminada" }[state.ubicFuente] || state.ubicFuente;
+    const fuente = {
+      "nube (Firebase)": "sincronizadas en la nube (Firebase)",
+      manual: "ajustadas a mano (locales)",
+      guardada: "guardadas en este dispositivo",
+      "tu ubicación": "a partir de tu ubicación",
+      predeterminada: "en la ubicación predeterminada"
+    }[state.ubicFuente] || state.ubicFuente;
     const prec = state.ubicFuente === "tu ubicación" && state.precision ? ` (precisión ±${state.precision} m: arrastra los botes si no coincide)` : "";
     info.textContent = `Posiciones ${fuente}${prec}. Los botes 2 a 5 son simulados.${state.ubicError ? " Ubicación del navegador: " + state.ubicError : ""}`;
   }
@@ -1354,6 +1452,7 @@ function setupEventListeners() {
   if ($("btnVolverMapa")) $("btnVolverMapa").onclick = () => irA("map");
   if ($("btnRenombrarBote")) $("btnRenombrarBote").onclick = () => renombrarBote(state.activeId);
   if ($("btnRenombrarBase")) $("btnRenombrarBase").onclick = renombrarBase;
+  if ($("btnFirebaseSync")) $("btnFirebaseSync").onclick = configurarFirebaseModal;
   if ($("btnSimLlenar")) $("btnSimLlenar").onclick = () => forzarNivelSimulado(boteActivo(), 85);
   if ($("btnSimVaciar")) $("btnSimVaciar").onclick = () => forzarNivelSimulado(boteActivo(), 5);
 
