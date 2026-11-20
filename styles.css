@@ -35,6 +35,12 @@
   --organico: #f59e0b;
 }
 
+/* Regla global para evitar que clases de display (.flex, .inline-flex, etc.)
+   impidan ocultar elementos que tengan el atributo nativo [hidden] */
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background-color: var(--bg);

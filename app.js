@@ -476,20 +476,33 @@ function tiempoRelativoVaciado(compId) {
 }
 
 // ===================== TELEMETRÍA =====================
+function mostrarAviso(mostrar, txt) {
+  const el = $("aviso");
+  if (!el) return;
+  if (mostrar) {
+    el.classList.remove("hidden");
+    el.hidden = false;
+    if (txt && $("avisoTxt")) $("avisoTxt").textContent = txt;
+  } else {
+    el.classList.add("hidden");
+    el.hidden = true;
+  }
+}
+
 async function fetchTelemetry() {
   // Los botes simulados avanzan siempre
   botesLista().forEach(b => { if (!b.real) tickBoteSimulado(b); });
   if (state.firebaseUrl && !state.arrastrando) cargarMapaDeFirebase();
 
   if (state.demoMode) {
+    mostrarAviso(false);
     tickBoteSimulado(state.botes[1]);
     actualizarVistas();
     return;
   }
 
   if (!state.token || state.token.trim() === "") {
-    $("aviso").hidden = false;
-    $("avisoTxt").textContent = "Inicia sesión en Particle Cloud para ver las lecturas en vivo.";
+    mostrarAviso(true, "Inicia sesión en Particle Cloud para ver las lecturas en vivo.");
     actualizarVistas();
     return;
   }
@@ -500,7 +513,8 @@ async function fetchTelemetry() {
     }
 
     const r = await fetch(`${state.baseApi}/datos`, {
-      headers: { "Authorization": "Bearer " + state.token }
+      headers: { "Authorization": "Bearer " + state.token },
+      cache: "no-store"
     });
     const texto = await r.text();
 
@@ -519,11 +533,10 @@ async function fetchTelemetry() {
 
     const d = typeof j.result === "string" ? JSON.parse(j.result) : j.result;
     processParticleData(d, j.coreInfo);
-    $("aviso").hidden = true;
+    mostrarAviso(false);
   } catch (err) {
     state.conexion.conectado = false;
-    $("aviso").hidden = false;
-    $("avisoTxt").textContent = "Error Particle API: " + err.message;
+    mostrarAviso(true, "Error Particle API: " + err.message);
   } finally {
     actualizarVistas();
   }
@@ -1484,7 +1497,7 @@ function setupEventListeners() {
   if (btnToggleDemo) {
     btnToggleDemo.onclick = () => {
       state.demoMode = !state.demoMode;
-      if (state.demoMode) $("aviso").hidden = true;
+      if (state.demoMode) mostrarAviso(false);
       updateModeStatus();
       fetchTelemetry();
     };
@@ -1507,7 +1520,7 @@ function setupEventListeners() {
       btnAct.disabled = true;
       btnAct.classList.add("opacity-50", "cursor-wait");
       try {
-        if (boteActivo().real && !state.demoMode) {
+        if (!state.demoMode) {
           await llamarParticleFunc("medir", "1");
         }
         await fetchTelemetry();
@@ -1542,7 +1555,7 @@ function setupEventListeners() {
       sessionStorage.removeItem("pt");
       sessionStorage.removeItem("pd");
       state.demoMode = true;
-      $("aviso").hidden = true;
+      mostrarAviso(false);
       updateModeStatus();
       $("loginModal").classList.add("hidden");
       fetchTelemetry();
