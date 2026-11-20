@@ -173,11 +173,18 @@
                   <option value="pie">Ruta a pie</option>
                 </select>
                 <button id="btnMoverBote" type="button" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 transition">Mover botes y base</button>
+                <button id="btnRenombrarBase" type="button" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 transition" title="Cambiar nombre de la Base de recolección">Renombrar Base</button>
                 <button id="btnMiUbicacion" type="button" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 transition">Usar mi ubicación</button>
               </div>
             </div>
             <div id="map" class="w-full h-[480px] rounded-xl border border-borderDark z-10"></div>
-            <p id="rutaInfo" class="text-xs text-slate-300"></p>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p id="rutaInfo" class="text-xs text-slate-300"></p>
+              <a id="btnGoogleMaps" href="#" target="_blank" rel="noopener noreferrer" class="hidden shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                <span>Abrir en Google Maps</span>
+              </a>
+            </div>
             <p id="ubicInfo" class="text-[11px] text-slate-500"></p>
           </div>
 
@@ -190,9 +197,17 @@
 
       <!-- TAB 1: DASHBOARD (del bote seleccionado) -->
       <section id="tab-dashboard" class="tab-pane hidden space-y-6">
-        <div class="flex items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
           <button id="btnVolverMapa" type="button" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-borderDark text-xs font-semibold transition">← Volver al mapa</button>
-          <h3 id="boteTitulo" class="font-bold text-white text-base"></h3>
+          <div class="flex items-center gap-2">
+            <h3 id="boteTitulo" class="font-bold text-white text-base"></h3>
+            <button id="btnRenombrarBote" type="button" title="Cambiar nombre de este bote" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-borderDark text-[11px] font-semibold transition">✎ Renombrar</button>
+          </div>
+          <div id="simControls" class="hidden flex items-center gap-2">
+            <span class="text-[11px] text-slate-400 font-medium">Simulación rápida:</span>
+            <button id="btnSimLlenar" type="button" class="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-xs font-bold transition">Simular llenado (85%)</button>
+            <button id="btnSimVaciar" type="button" class="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition">Simular vaciado (5%)</button>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="gridCards"></div>
@@ -375,21 +390,28 @@
             <div class="space-y-4">
               <div>
                 <div class="flex justify-between text-xs font-semibold mb-1">
-                  <span class="text-emerald-400">Normal / Bajo</span>
+                  <span class="text-emerald-400">Normal / Bajo · LED Verde</span>
                   <span>0% a &lt; 50%</span>
                 </div>
-                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-emerald-400 h-full w-[50%]"></div></div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-emerald-400 h-full w-[49%]"></div></div>
               </div>
               <div>
                 <div class="flex justify-between text-xs font-semibold mb-1">
-                  <span class="text-amber-400">Nivel Medio</span>
-                  <span>50% a 79%</span>
+                  <span class="text-amber-400">Nivel Medio · LED Amarillo</span>
+                  <span>50% a 69%</span>
                 </div>
-                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-amber-400 h-full w-[79%]"></div></div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-amber-400 h-full w-[69%]"></div></div>
               </div>
               <div>
                 <div class="flex justify-between text-xs font-semibold mb-1">
-                  <span class="text-red-400">Completamente Lleno (Crítico)</span>
+                  <span class="text-orange-400">Casi Lleno · LED Naranja</span>
+                  <span>70% a 79%</span>
+                </div>
+                <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-orange-400 h-full w-[79%]"></div></div>
+              </div>
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-red-400">Completamente Lleno (Crítico) · LED Rojo</span>
                   <span>&ge; 80%</span>
                 </div>
                 <div class="w-full bg-boxDark h-2 rounded-full overflow-hidden"><div class="bg-red-400 h-full w-full"></div></div>

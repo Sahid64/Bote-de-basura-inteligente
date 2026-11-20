@@ -3,11 +3,22 @@ SYSTEM_THREAD(ENABLED);
 #define NUM_SENSORES 3
 #define MUESTRAS     5
 #define TIMEOUT_US   30000UL
-#define UMBRAL_ALERTA 80    
+#define UMBRAL_MEDIO      50
+#define UMBRAL_CASI_LLENO 70
+#define UMBRAL_ALERTA     80
 
-const int TRIG[3] = {D2, D4, D0};
-const int ECHO[3] = {D3, D5, D1};
-const int LED_PIN[3] = {A0, A1, A2};
+// Cambia a true si tus LEDs RGB de 4 patas son de Ánodo Común (pata larga a 3V3)
+// Déjalo en false si son de Cátodo Común (pata larga a GND)
+#define LED_ANODO_COMUN false
+
+const int TRIG[3]  = {D2, D4, D0};
+const int ECHO[3]  = {D3, D5, D1};
+// Pines para los 3 LEDs RGB (solo canales Rojo y Verde en A0..A5; pata Azul sin conectar):
+// Sensor 1 (Plástico): R = A0, G = A1
+// Sensor 2 (Aluminio): R = A2, G = A3
+// Sensor 3 (Orgánico): R = A4, G = A5
+const int LED_R[3] = {A0, A2, A4};
+const int LED_G[3] = {A1, A3, A5};
 
 double distVacio[3] = {27.0, 27.0, 27.0};
 double distLleno[3] = {3.0, 3.0, 3.0};
@@ -97,6 +108,52 @@ int calcNivel(int i, double d) {
 }
 
 // =========================================================
+// CONTROL DE LEDS RGB (R + G en A0..A5)
+// =========================================================
+inline void escribirPinLed(int pin, bool encender) {
+  digitalWrite(pin, (LED_ANODO_COMUN ? !encender : encender) ? HIGH : LOW);
+}
+
+// Actualiza el color del LED i según nivel[i]:
+// < 0 (sin eco) : Apagado  (R=0, G=0)
+// 0..49%        : Verde    (R=0, G=1)
+// 50..69%       : Amarillo (R=1, G=1)
+// 70..79%       : Naranja  (R=1, G=PWM ~22% en loop)
+// >= 80%        : Rojo     (R=1, G=0)
+void actualizarLedColor(int i, int pct) {
+  if (pct < 0) {
+    escribirPinLed(LED_R[i], false);
+    escribirPinLed(LED_G[i], false);
+  } else if (pct >= UMBRAL_ALERTA) {
+    escribirPinLed(LED_R[i], true);
+    escribirPinLed(LED_G[i], false);
+  } else if (pct >= UMBRAL_CASI_LLENO) {
+    // Naranja: Rojo fijo, el Verde se modula en refrescarLedsNaranja()
+    escribirPinLed(LED_R[i], true);
+    escribirPinLed(LED_G[i], false);
+  } else if (pct >= UMBRAL_MEDIO) {
+    escribirPinLed(LED_R[i], true);
+    escribirPinLed(LED_G[i], true);
+  } else {
+    escribirPinLed(LED_R[i], false);
+    escribirPinLed(LED_G[i], true);
+  }
+}
+
+// Modulación por software en loop() para que el rango 70-79% se vea Naranja
+// incluso en pines sin PWM por hardware (A0..A3)
+void refrescarLedsNaranja() {
+  // Ciclo de 10 ms (~100 Hz, sin parpadeo visible): Verde encendido 2 ms de cada 10 ms (20%)
+  bool pulsoVerde = ((millis() % 10) < 2);
+  for (int i = 0; i < NUM_SENSORES; i++) {
+    if (nivel[i] >= UMBRAL_CASI_LLENO && nivel[i] < UMBRAL_ALERTA) {
+      escribirPinLed(LED_R[i], true);
+      escribirPinLed(LED_G[i], pulsoVerde);
+    }
+  }
+}
+
+// =========================================================
 // FUNCIONES DE CALIBRACIÓN EEPROM
 // =========================================================
 
@@ -163,13 +220,13 @@ void actualizar() {
     distancia[i] = medir(i);
     nivel[i] = calcNivel(i, distancia[i]);
     
+    // Actualiza color del LED RGB según el porcentaje
+    actualizarLedColor(i, nivel[i]);
+
     // Alerta de llenado
     if (nivel[i] >= UMBRAL_ALERTA) {
-      digitalWrite(LED_PIN[i], HIGH);
       haySeccionLlena = true;
       detalleLleno += String(nombres[i]) + " (" + String(nivel[i]) + "%); ";
-    } else {
-      digitalWrite(LED_PIN[i], LOW);
     }
 
     // Detección automática de vaciado dinámico
@@ -233,8 +290,10 @@ void setup() {
     pinMode(TRIG[i], OUTPUT);
     digitalWrite(TRIG[i], LOW);
     pinMode(ECHO[i], INPUT);
-    pinMode(LED_PIN[i], OUTPUT);
-    digitalWrite(LED_PIN[i], LOW);
+    pinMode(LED_R[i], OUTPUT);
+    pinMode(LED_G[i], OUTPUT);
+    escribirPinLed(LED_R[i], false);
+    escribirPinLed(LED_G[i], false);
   }
 
   cargarCalib();
@@ -250,6 +309,7 @@ void setup() {
 }
 
 void loop() {
+  refrescarLedsNaranja();
   if (primera || millis() - ultima >= (unsigned long)intervaloMin * 60000UL) {
     primera = false;
     ultima = millis();

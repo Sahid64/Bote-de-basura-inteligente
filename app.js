@@ -7,9 +7,9 @@ const CONFIG = {
   // Base de recolección (inicio y fin de la ruta), relativa al Bote 1
   base: { dLat: -0.0012, dLng: -0.0009 },
   compartimentos: [
-    { id: 1, nombre: "Plástico", icono: "recycle", colorHex: "#4ade80", colorVar: "--plastico" },
-    { id: 2, nombre: "Aluminio", icono: "can",     colorHex: "#38bdf8", colorVar: "--aluminio" },
-    { id: 3, nombre: "Orgánico", icono: "leaf",    colorHex: "#f59e0b", colorVar: "--organico" }
+    { id: 1, nombre: "Plástico", icono: "recycle", colorHex: "#4ade80", colorVar: "--plastico", pinesLed: "A0 (R) / A1 (G)" },
+    { id: 2, nombre: "Aluminio", icono: "can",     colorHex: "#38bdf8", colorVar: "--aluminio", pinesLed: "A2 (R) / A3 (G)" },
+    { id: 3, nombre: "Orgánico", icono: "leaf",    colorHex: "#f59e0b", colorVar: "--organico", pinesLed: "A4 (R) / A5 (G)" }
   ],
   // Botes simulados: posición relativa al Bote 1 y nivel inicial [plástico, aluminio, orgánico]
   botesSim: [
@@ -59,6 +59,7 @@ let state = {
   audioEnabled: false,
   activeId: 1,
   botes: {},
+  nombres: leerJSON("bote_nombres", {}),
   pos: leerJSON("bote_pos", null),
   ubicFuente: "predeterminada",
   ubicError: "",
@@ -132,8 +133,10 @@ function generarHistorial(b, objetivo) {
 }
 
 function initBotes() {
-  state.botes[1] = { id: 1, nombre: "Bote 1 · Photon", real: true, historial: [], vaciados: [] };
-  CONFIG.botesSim.forEach(s => { state.botes[s.id] = { ...s, real: false, historial: [], vaciados: [] }; });
+  state.botes[1] = { id: 1, nombre: state.nombres[1] || "Bote 1 · Photon", real: true, historial: [], vaciados: [] };
+  CONFIG.botesSim.forEach(s => {
+    state.botes[s.id] = { ...s, nombre: state.nombres[s.id] || s.nombre, real: false, historial: [], vaciados: [] };
+  });
 
   botesLista().forEach(b => {
     cargarBote(b);
@@ -143,6 +146,67 @@ function initBotes() {
     }
     guardarBote(b);
   });
+}
+
+function nombreBase() {
+  return (state.nombres && state.nombres.base) || "Base";
+}
+
+function guardarNombres() {
+  try { localStorage.setItem("bote_nombres", JSON.stringify(state.nombres)); } catch (_) {}
+}
+
+function renombrarBote(id) {
+  const b = state.botes[id];
+  if (!b) return;
+  const nuevo = prompt("Nuevo nombre para este bote:", b.nombre);
+  if (!nuevo || !nuevo.trim()) return;
+  b.nombre = nuevo.trim();
+  state.nombres[id] = b.nombre;
+  guardarNombres();
+  rutaClave = "";
+  actualizarVistas();
+  const tabActual = document.querySelector(".nav-item.text-blue-400")?.dataset?.tab || "dashboard";
+  if (tabActual !== "map") {
+    $("viewTitle").textContent = `${TITULOS[tabActual] || "Dashboard"} · ${b.nombre}`;
+  }
+}
+
+function renombrarBase() {
+  const actual = nombreBase();
+  const nuevo = prompt("Nuevo nombre para la Base de recolección:", actual);
+  if (!nuevo || !nuevo.trim()) return;
+  state.nombres.base = nuevo.trim();
+  guardarNombres();
+  if (marcadorBase) {
+    marcadorBase.setIcon(L.divIcon({ className: "", html: `<div class="base-pin">${state.nombres.base}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }));
+  }
+  rutaClave = "";
+  renderMapaBotes();
+}
+
+function forzarNivelSimulado(b, objetivoPct) {
+  if (!b || b.real) return;
+  const cal = calibDe(b);
+  const ult = ultimoDe(b) || { p: [20, 20, 20] };
+  const t = Date.now();
+  const pre  = parseInt(localStorage.getItem("umbralPreVac"))  || 60;
+  const post = parseInt(localStorage.getItem("umbralPostVac")) || 10;
+
+  const p = [0, 1, 2].map(i => {
+    const variación = Math.floor(Math.random() * 5) - 2; // ±2% para que se vea natural
+    const nuevo = Math.max(0, Math.min(100, objetivoPct + variación));
+    if (ult.p[i] >= pre && nuevo <= post) {
+      registrarVaciado(b, i + 1, ult.p[i], nuevo, t, true);
+    }
+    return nuevo;
+  });
+  const c = p.map((v, i) => cmDesdePct(v, cal.vacio[i], cal.lleno[i]));
+  b.historial.push({ t, p, c, sim: 1 });
+  if (b.historial.length > 2000) b.historial.shift();
+  guardarBote(b);
+  rutaClave = "";
+  actualizarVistas();
 }
 
 function registrarVaciado(b, compId, pre, post, t, sim) {
@@ -219,10 +283,17 @@ function initUi() {
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2 pt-3 border-t border-borderDark/60 text-center">
+        <div class="grid grid-cols-3 gap-2 pt-3 border-t border-borderDark/60 text-center">
           <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
             <div class="text-[10px] text-slate-400 font-medium">Distancia</div>
             <div id="cm-${c.id}" class="text-xs font-bold text-white mt-0.5">-- cm</div>
+          </div>
+          <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
+            <div class="text-[10px] text-slate-400 font-medium">LED RGB</div>
+            <div id="led-${c.id}" class="text-xs font-bold text-emerald-400 mt-0.5 flex items-center justify-center gap-1.5">
+              <span id="led-dot-${c.id}" class="w-2.5 h-2.5 rounded-full inline-block" style="background:#4ade80;box-shadow:0 0 8px #4ade80"></span>
+              <span id="led-txt-${c.id}">Verde</span>
+            </div>
           </div>
           <div class="bg-boxDark p-2 rounded-xl border border-borderDark/40">
             <div class="text-[10px] text-slate-400 font-medium">Últ. Vaciado</div>
@@ -249,13 +320,24 @@ function estadoSensor(i) {
   return { txt: "OK", cls: "text-emerald-400", nota: "Eco estable" };
 }
 
+function estadoLedRgb(pct, ok = true) {
+  if (!ok || pct < 0) return { txt: "Apagado", hex: "#64748b", cls: "text-slate-400", glow: "none" };
+  if (pct >= CONFIG.umbrales.lleno)     return { txt: "Rojo",     hex: "#ef4444", cls: "text-red-400",     glow: "0 0 8px #ef4444" };
+  if (pct >= CONFIG.umbrales.casiLleno) return { txt: "Naranja",  hex: "#f97316", cls: "text-orange-400",  glow: "0 0 8px #f97316" };
+  if (pct >= CONFIG.umbrales.medio)     return { txt: "Amarillo", hex: "#eab308", cls: "text-amber-400",   glow: "0 0 8px #eab308" };
+  return                                       { txt: "Verde",    hex: "#4ade80", cls: "text-emerald-400", glow: "0 0 8px #4ade80" };
+}
+
 function renderSaludSensores() {
   const cont = $("devSensorCards");
   if (!cont) return;
   const todosFallan = !state.demoMode && state.conexion.t && !state.sensorOk.some(Boolean);
+  const h1 = ultimoDe(state.botes[1]);
   cont.innerHTML = CONFIG.compartimentos.map((c, i) => {
     const e = estadoSensor(i);
     const s = !state.demoMode && state.salud && state.salud.sensores[i];
+    const ok = state.demoMode || !state.conexion.t || state.sensorOk[i];
+    const led = estadoLedRgb(h1 ? h1.p[i] : 0, ok);
     const det = s && s.m !== undefined
       ? `<p class="text-[11px] text-slate-400">Muestras válidas: <span class="text-slate-200 font-medium">${s.m}/5</span> · Variación: <span class="text-slate-200 font-medium">${s.e} cm</span> · Fallos seguidos: <span class="text-slate-200 font-medium">${s.f}</span></p>` : "";
     return `
@@ -266,6 +348,10 @@ function renderSaludSensores() {
       <p class="text-[11px] text-slate-400">${e.nota}</p>
       ${det}
       <p class="text-[11px] text-slate-400">Vacío / Lleno: <span class="text-slate-200 font-medium">${state.calib.vacio[i]} / ${state.calib.lleno[i]} cm</span></p>
+      <p class="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-borderDark/50">
+        <span>LED RGB (${c.pinesLed}):</span>
+        <span class="font-bold ${led.cls} flex items-center gap-1.5"><i class="w-2 h-2 rounded-full inline-block" style="background:${led.hex};box-shadow:${led.glow}"></i>${led.txt}</span>
+      </p>
     </div>`;
   }).join("") + (todosFallan ? `<p class="sm:col-span-3 text-[11px] text-amber-400">Los 3 sensores fallaron a la vez: lo más probable es la alimentación de 5 V (Nano/powerbank) o el GND común.</p>` : "");
 }
@@ -523,15 +609,28 @@ function renderAll() {
   const titulo = $("boteTitulo");
   if (titulo) titulo.textContent = b.nombre;
 
+  const simControls = $("simControls");
+  if (simControls) {
+    if (b.real) simControls.classList.add("hidden");
+    else simControls.classList.remove("hidden");
+  }
+
   const conSensor = b.real && !state.demoMode;
   CONFIG.compartimentos.forEach((c, i) => {
     const pct = current.p[i];
+    const ok = !conSensor || state.sensorOk[i];
     const status = getStatusBadge(pct);
+    const led = estadoLedRgb(pct, ok);
 
     $(`ring-${c.id}`).style.strokeDasharray = `${(pct / 100) * 490} 490`;
     $(`pct-${c.id}`).textContent = `${pct}%`;
-    $(`cm-${c.id}`).textContent = (conSensor && !state.sensorOk[i]) ? "Sin eco" : `${current.c[i]} cm`;
+    $(`cm-${c.id}`).textContent = !ok ? "Sin eco" : `${current.c[i]} cm`;
     $(`vac-${c.id}`).textContent = tiempoRelativoVaciado(c.id);
+
+    const ledDot = $(`led-dot-${c.id}`), ledTxt = $(`led-txt-${c.id}`), ledBox = $(`led-${c.id}`);
+    if (ledDot) { ledDot.style.background = led.hex; ledDot.style.boxShadow = led.glow; }
+    if (ledTxt) ledTxt.textContent = led.txt;
+    if (ledBox) ledBox.className = `text-xs font-bold ${led.cls} mt-0.5 flex items-center justify-center gap-1.5`;
 
     const badge = $(`badge-${c.id}`);
     badge.textContent = status.txt;
@@ -1111,7 +1210,7 @@ function renderMapaBotes() {
   const pb = posicionBase();
   if (!marcadorBase) {
     marcadorBase = L.marker([pb.lat, pb.lng], {
-      icon: L.divIcon({ className: "", html: '<div class="base-pin">Base</div>', iconSize: [48, 24], iconAnchor: [24, 12] }),
+      icon: L.divIcon({ className: "", html: `<div class="base-pin">${nombreBase()}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }),
       draggable: state.moviendo
     }).addTo(mapa);
     marcadorBase.on("dragstart", () => { state.arrastrando = true; });
@@ -1154,16 +1253,20 @@ async function matrizDistancias(pts, srv) {
 async function actualizarRuta() {
   if (!mapa) return;
   const info = $("rutaInfo");
+  const btnGmaps = $("btnGoogleMaps");
   const botes = botesLista();
   const alerta = botes.filter(b => resumenBote(b).max >= CONFIG.umbrales.lleno);
   const base = posicionBase();
+  const nBase = nombreBase();
+  const nombresKey = [nBase, ...botes.map(b => b.nombre)].join("|");
   const posKey = [base, ...botes.map(posicionBote)].map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|");
-  const clave = `${state.modoRuta}|${state.rutaVisible}|${alerta.length > 0}|${posKey}`;
+  const clave = `${state.modoRuta}|${state.rutaVisible}|${alerta.length > 0}|${posKey}|${nombresKey}`;
   if (clave === rutaClave) return;
   rutaClave = clave;
   const mi = ++rutaSeq;   // cancela cualquier petición anterior que siga en curso
 
   if (capaRuta) { mapa.removeLayer(capaRuta); capaRuta = null; }
+  if (btnGmaps) btnGmaps.classList.add("hidden");
   if (!state.rutaVisible) { if (info) info.textContent = "Ruta oculta."; return; }
   if (!alerta.length) { if (info) info.textContent = `Sin ruta: ningún bote ha llegado al umbral de alerta (≥ ${CONFIG.umbrales.lleno} %).`; return; }
 
@@ -1196,7 +1299,14 @@ async function actualizarRuta() {
   capaRuta = L.polyline(coords, { color: "#3b82f6", weight: 5, opacity: 0.85, dashArray: porCalles ? null : "8 8" }).addTo(mapa);
   if (info) {
     const modo = state.modoRuta === "pie" ? "a pie" : "en vehículo";
-    info.textContent = `Ruta ${modo}: Base → ${orden.map(b => b.nombre.split(" · ")[0]).join(" → ")} → Base${extra}${porCalles ? "" : " (línea recta: sin servicio de rutas)"}`;
+    info.textContent = `Ruta ${modo}: ${nBase} → ${orden.map(b => b.nombre.split(" · ")[0]).join(" → ")} → ${nBase}${extra}${porCalles ? "" : " (línea recta: sin servicio de rutas)"}`;
+  }
+  if (btnGmaps) {
+    const orig = `${base.lat},${base.lng}`;
+    const waypoints = orden.map(posicionBote).map(p => `${p.lat},${p.lng}`).join("|");
+    const travelmode = state.modoRuta === "pie" ? "walking" : "driving";
+    btnGmaps.href = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(orig)}&destination=${encodeURIComponent(orig)}&waypoints=${encodeURIComponent(waypoints)}&travelmode=${travelmode}`;
+    btnGmaps.classList.remove("hidden");
   }
 }
 
@@ -1242,6 +1352,10 @@ function setupEventListeners() {
   });
 
   if ($("btnVolverMapa")) $("btnVolverMapa").onclick = () => irA("map");
+  if ($("btnRenombrarBote")) $("btnRenombrarBote").onclick = () => renombrarBote(state.activeId);
+  if ($("btnRenombrarBase")) $("btnRenombrarBase").onclick = renombrarBase;
+  if ($("btnSimLlenar")) $("btnSimLlenar").onclick = () => forzarNivelSimulado(boteActivo(), 85);
+  if ($("btnSimVaciar")) $("btnSimVaciar").onclick = () => forzarNivelSimulado(boteActivo(), 5);
 
   const btnRuta = $("btnRuta");
   if (btnRuta) {
