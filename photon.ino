@@ -50,6 +50,7 @@ int umbralPostVaciado = 10; // Valor por defecto (<= 10%)
 
 unsigned long ultima = 0;
 bool primera = true;
+volatile bool midiendo = false;
 
 // =========================================================
 // FUNCIONES AUXILIARES DE MEDICIÓN (DEBEN IR ARRIBA)
@@ -211,6 +212,9 @@ int setCalibracion(String arg) {
 // =========================================================
 
 void actualizar() {
+  if (midiendo) return;
+  midiendo = true;
+
   bool haySeccionLlena = false;
   String detalleLleno = "";
   String detalleVaciado = "";
@@ -241,12 +245,9 @@ void actualizar() {
     delay(50);
   }
 
-  if (detalleVaciado.length() > 0) {
-    Particle.publish("vaciado", "Vaciado detectado: " + detalleVaciado, PRIVATE);
-  }
-
   // Creación del JSON
-  String s = "{\"t\":" + String(Time.now());
+  long ts = Time.isValid() ? Time.now() : 0;
+  String s = "{\"t\":" + String(ts);
   for (int i = 0; i < NUM_SENSORES; i++) {
     s += ",\"c" + String(i + 1) + "\":" + String(distancia[i], 1);
     s += ",\"p" + String(i + 1) + "\":" + String(nivel[i]);
@@ -254,17 +255,22 @@ void actualizar() {
     s += ",\"e" + String(i + 1) + "\":" + String(dispersion[i], 1);
     s += ",\"f" + String(i + 1) + "\":" + String(fallos[i]);
   }
-  int rssi = (int8_t)WiFi.RSSI();               // funciona con cualquier versión de Device OS
+  int rssi = WiFi.ready() ? (int8_t)WiFi.RSSI() : 0;
   s += ",\"w\":" + String((rssi >= 0 || rssi < -127) ? 0 : rssi); // 0 = sin dato
   s += ",\"u\":" + String(millis() / 1000UL);   // segundos encendida (se reinicia a los ~49 días)
   s += ",\"v\":\"" + System.version() + "\"}";
   datos = s;
 
-  Particle.publish("bote/nivel", datos, PRIVATE);
-
-  if (haySeccionLlena) {
-    Particle.publish("lleno", "Vaciar contenedor: " + detalleLleno, PRIVATE);
+  if (Particle.connected()) {
+    if (detalleVaciado.length() > 0) {
+      Particle.publish("vaciado", "Vaciado detectado: " + detalleVaciado, PRIVATE);
+    }
+    Particle.publish("bote/nivel", datos, PRIVATE);
+    if (haySeccionLlena) {
+      Particle.publish("lleno", "Vaciar contenedor: " + detalleLleno, PRIVATE);
+    }
   }
+  midiendo = false;
 }
 
 int setUmbralVaciado(String arg) {
@@ -310,8 +316,12 @@ void setup() {
 
 void loop() {
   refrescarLedsNaranja();
-  if (primera || millis() - ultima >= (unsigned long)intervaloMin * 60000UL) {
+  // En la primera medición espera hasta 8 s a que conecte la nube y sincronice el reloj
+  if (primera && (Particle.connected() || millis() >= 8000UL)) {
     primera = false;
+    ultima = millis();
+    actualizar();
+  } else if (!primera && millis() - ultima >= (unsigned long)intervaloMin * 60000UL) {
     ultima = millis();
     actualizar();
   }

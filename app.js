@@ -75,7 +75,8 @@ let state = {
   rutaVisible: true,
   calib: calibInicial(),
   sensorOk: [true, true, true],
-  conexion: { conectado: false, t: null }
+  conexion: { conectado: false, t: null },
+  fbUpdatedAt: 0
 };
 
 const SVG_ICONS = {
@@ -152,6 +153,10 @@ function initBotes() {
   });
 }
 
+function escHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 function nombreBase() {
   return (state.nombres && state.nombres.base) || "Base";
 }
@@ -162,7 +167,7 @@ function aplicarNombres() {
     b.nombre = (state.nombres && state.nombres[b.id]) || def;
   });
   if (marcadorBase) {
-    marcadorBase.setIcon(L.divIcon({ className: "", html: `<div class="base-pin">${nombreBase()}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }));
+    marcadorBase.setIcon(L.divIcon({ className: "", html: `<div class="base-pin">${escHtml(nombreBase())}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }));
   }
 }
 
@@ -174,6 +179,11 @@ async function cargarMapaDeFirebase() {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     if (!data) return false;
+    const remTs = Number(data.updatedAt) || 1;
+    const primeraCarga = state.fbUpdatedAt === 0;
+    if (!primeraCarga && remTs === state.fbUpdatedAt) return false; // sin cambios en Firebase
+    state.fbUpdatedAt = remTs;
+
     let cambio = false;
     if (data.pos && typeof data.pos === "object" && data.pos[1] && data.pos.base) {
       state.pos = data.pos;
@@ -190,7 +200,7 @@ async function cargarMapaDeFirebase() {
     if (cambio) {
       rutaClave = "";
       actualizarVistas();
-      ajustarVistaMapa();
+      if (primeraCarga) ajustarVistaMapa();
     }
     return cambio;
   } catch (e) {
@@ -202,13 +212,15 @@ async function cargarMapaDeFirebase() {
 async function guardarMapaEnFirebase() {
   if (!state.firebaseUrl) return;
   try {
+    const now = Date.now();
+    state.fbUpdatedAt = now;
     await fetch(`${state.firebaseUrl}/bote_mapa.json`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         pos: state.pos,
         nombres: state.nombres,
-        updatedAt: Date.now()
+        updatedAt: now
       })
     });
     state.ubicFuente = "nube (Firebase)";
@@ -246,7 +258,7 @@ function renombrarBase() {
   state.nombres.base = nuevo.trim();
   guardarNombres();
   if (marcadorBase) {
-    marcadorBase.setIcon(L.divIcon({ className: "", html: `<div class="base-pin">${state.nombres.base}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }));
+    marcadorBase.setIcon(L.divIcon({ className: "", html: `<div class="base-pin">${escHtml(state.nombres.base)}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }));
   }
   rutaClave = "";
   renderMapaBotes();
@@ -303,7 +315,7 @@ function tickBoteSimulado(b) {
 }
 
 // ===================== INICIO =====================
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   initThemeToggle();
   initBotes();
   initUi();
@@ -311,7 +323,7 @@ window.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
   irA("map");
   initMapa();
-  resolverUbicacion();
+  await resolverUbicacion();
   renderAll();
 
   if (!state.demoMode) {
@@ -319,7 +331,6 @@ window.addEventListener("DOMContentLoaded", () => {
     leerCalibDePhoton();
     fetchTelemetry();
   }
-  cargarMapaDeFirebase();
   state.timer = setInterval(fetchTelemetry, 15000);
 });
 
@@ -532,6 +543,11 @@ async function fetchTelemetry() {
     if (j.error) throw new Error(j.error_description || j.error);
 
     const d = typeof j.result === "string" ? JSON.parse(j.result) : j.result;
+    if (!d || typeof d !== "object" || Object.keys(d).length === 0) {
+      state.conexion.conectado = Boolean(j.coreInfo && j.coreInfo.connected);
+      mostrarAviso(false);
+      return;
+    }
     processParticleData(d, j.coreInfo);
     mostrarAviso(false);
   } catch (err) {
@@ -588,7 +604,7 @@ async function leerCalibDePhoton() {
 
 function processParticleData(d, coreInfo) {
   const b = state.botes[1];
-  const t = d.t ? d.t * 1000 : Date.now();
+  const t = d.t && d.t > 1e9 ? d.t * 1000 : Date.now();
 
   state.conexion = {
     conectado: coreInfo && typeof coreInfo.connected === "boolean" ? coreInfo.connected : true,
@@ -942,19 +958,21 @@ function renderHistoryTable() {
   }).join('');
 }
 
+let audioCtx = null;
 function playTone(freq, duration) {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
     osc.type = "sine";
     osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(audioCtx.destination);
     osc.start();
-    osc.stop(ctx.currentTime + duration);
+    osc.stop(audioCtx.currentTime + duration);
   } catch (_) {}
 }
 
@@ -1177,7 +1195,16 @@ function resumenBote(b) {
   return { p, max, estado: getStatusBadge(max), color: colorPorNivel(max) };
 }
 
-function resolverUbicacion() {
+async function resolverUbicacion() {
+  if (state.firebaseUrl) {
+    const ok = await cargarMapaDeFirebase();
+    if (ok) return;
+    if (state.pos) {
+      state.ubicFuente = "guardada";
+      guardarMapaEnFirebase();
+      return;
+    }
+  }
   if (state.pos) { state.ubicFuente = "guardada"; return; }
   const vieja = leerJSON("bote_ubicacion", null);   // versión anterior: solo el Bote 1
   if (vieja) { distribuirBotes(vieja); state.ubicFuente = "guardada"; return; }
@@ -1238,7 +1265,7 @@ function popupBote(b) {
     </div>`).join("");
   return `
     <div style="font-family:Inter,sans-serif;color:#0b1220;min-width:210px">
-      <b style="font-size:13px">${b.nombre}</b><br/>
+      <b style="font-size:13px">${escHtml(b.nombre)}</b><br/>
       <span style="font-size:11px;color:#64748b">${origen}</span>
       ${barras}
       <button onclick="abrirDashboard(${b.id})" style="margin-top:8px;width:100%;padding:7px;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;font-size:12px;border:0;cursor:pointer">Ver dashboard</button>
@@ -1259,7 +1286,7 @@ function renderListaBotes() {
     return `
       <button type="button" onclick="abrirDashboard(${b.id})" class="w-full text-left bg-boxDark border border-borderDark hover:border-blue-500 rounded-xl p-3 space-y-2 transition">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-bold text-white">${b.nombre}</span>
+          <span class="text-xs font-bold text-white">${escHtml(b.nombre)}</span>
           <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${r.estado.cls}">${r.estado.txt}</span>
         </div>
         ${barras}
@@ -1313,7 +1340,7 @@ function renderMapaBotes() {
   const pb = posicionBase();
   if (!marcadorBase) {
     marcadorBase = L.marker([pb.lat, pb.lng], {
-      icon: L.divIcon({ className: "", html: `<div class="base-pin">${nombreBase()}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }),
+      icon: L.divIcon({ className: "", html: `<div class="base-pin">${escHtml(nombreBase())}</div>`, iconSize: [null, 24], iconAnchor: [24, 12] }),
       draggable: state.moviendo
     }).addTo(mapa);
     marcadorBase.on("dragstart", () => { state.arrastrando = true; });
